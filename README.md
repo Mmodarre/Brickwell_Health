@@ -54,18 +54,18 @@ The simulator produces production-quality transactional data suitable for:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CLI (brickwell)                                 │
+│                              CLI (brickwell)                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                            ParallelRunner                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │  Worker 0   │  │  Worker 1   │  │  Worker 2   │  │  Worker N   │        │
-│  │             │  │             │  │             │  │             │        │
-│  │ SimEnv      │  │ SimEnv      │  │ SimEnv      │  │ SimEnv      │        │
-│  │ Processes   │  │ Processes   │  │ Processes   │  │ Processes   │        │
-│  │ BatchWriter │  │ BatchWriter │  │ BatchWriter │  │ BatchWriter │        │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
+│                            ParallelRunner                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │  Worker 0   │  │  Worker 1   │  │  Worker 2   │  │  Worker N   │         │
+│  │             │  │             │  │             │  │             │         │
+│  │ SimEnv      │  │ SimEnv      │  │ SimEnv      │  │ SimEnv      │         │
+│  │ Processes   │  │ Processes   │  │ Processes   │  │ Processes   │         │
+│  │ BatchWriter │  │ BatchWriter │  │ BatchWriter │  │ BatchWriter │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                            PostgreSQL Database                               │
+│                            PostgreSQL Database                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
