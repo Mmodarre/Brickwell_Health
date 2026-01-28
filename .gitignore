@@ -1,0 +1,11 @@
+
+*.pyc
+*.json
+.databricks
+.vscode
+scripts/
+brickwell_health.egg-info/
+data-download/
+data/
+poison.py
+docs/

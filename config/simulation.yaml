@@ -1,0 +1,180 @@
+# Brickwell Health Simulator Configuration
+# =========================================
+# This is the main configuration file for the PHI simulator.
+# All values can be overridden via environment variables with BRICKWELL_ prefix.
+
+simulation:
+  # Simulation starts with ZERO members. The warmup period allows
+  # population to build before analysis. Claims require waiting periods
+  # to complete (2-12 months), so warmup should be at least 2 years.
+  start_date: "2020-01-01"
+  end_date: "2027-12-31"  # 8 years total
+  warmup_days: 730        # First 2 years = warmup, remaining 6 = analysis
+
+scale:
+  # Target 100k members by end of warmup (2 years)
+  # This drives acquisition rate: ~140/day to reach 100k in 730 days
+  target_member_count: 3000
+  target_growth_rate: 0.03   # 3% annual growth after warmup
+  target_churn_rate: 0.068   # 6.8% annual churn (industry average)
+
+acquisition:
+  channels:
+    Online: 0.45
+    Phone: 0.25
+    Broker: 0.20
+    Corporate: 0.10
+  approval_rate: 0.92
+  decision_time_days:
+    Online: [0.1, 1.0]
+    Phone: [1.0, 3.0]
+    Broker: [2.0, 7.0]
+    Corporate: [5.0, 14.0]
+
+policy:
+  type_distribution:
+    Single: 0.35
+    Couple: 0.25
+    Family: 0.30
+    "Single Parent": 0.10
+  tier_distribution:
+    Gold: 0.20
+    Silver: 0.35
+    Bronze: 0.30
+    Basic: 0.15
+
+claims:
+  # Legacy parameters (kept for backwards compatibility)
+  uncovered_claim_attempt_rate: 0.05  # 5% of members attempt claims without coverage (uses placeholder coverage_id)
+
+  # Hospital frequency (Poisson lambda by age group) - based on APRA 2024-2025 data
+  hospital_frequency:
+    "18-30": 0.3   # Young adults: low utilization
+    "31-45": 0.5   # Middle age: moderate utilization
+    "46-60": 1.2   # Established: increasing needs
+    "61-70": 2.0   # Baby Boomers: 68% claim 1-2x/year
+    "71+": 2.5     # Elderly: highest utilization
+
+  # Hospital severity (lognormal parameters)
+  # mu=8.0, sigma=1.5 produces median ~$2,981, matches APRA data
+  hospital_severity:
+    mu: 8.0
+    sigma: 1.5
+
+  # High-claim distribution (8.8% of hospital claims exceed $10k)
+  high_claim_probability: 0.088
+  high_claim_tiers:
+    - range: [10000, 20000]
+      weight: 0.634
+    - range: [20000, 30000]
+      weight: 0.231
+    - range: [30000, 50000]
+      weight: 0.070
+    - range: [50000, 100000]
+      weight: 0.031
+    - range: [100000, 200000]
+      weight: 0.0024
+    - range: [200000, 450000]
+      weight: 0.0002
+
+  # Dental sub-category frequencies (annual Poisson lambda)
+  dental_frequency:
+    preventative: 2.0  # Check-ups, cleans: 2/year standard
+    general: 0.5       # Fillings, extractions: occasional
+    major: 0.1         # Crowns, root canals: rare
+
+  # Dental costs by sub-category (normal distribution parameters)
+  dental_costs:
+    preventative:
+      mean: 175
+      std: 35
+    general:
+      mean: 280
+      std: 90
+    major:
+      mean: 1300
+      std: 450
+
+  # Other extras services (frequency = annual Poisson lambda)
+  optical:
+    frequency: 0.8
+    mean: 350
+    std: 100
+
+  physiotherapy:
+    frequency: 1.5
+    mean: 85
+    std: 20
+    age_65_multiplier: 1.5  # 50% more frequent for 65+
+
+  chiropractic:
+    frequency: 1.2
+    mean: 70
+    std: 15
+
+  # Ambulance (unchanged from original)
+  ambulance:
+    frequency: 0.02
+    mean: 950
+    std: 200
+
+  # Claim approval/denial settings
+  # Stochastic approval rates applied AFTER deterministic checks pass
+  # These rates reflect real-world claim processing (not attempt rates)
+  approval:
+    hospital_approval_rate: 0.98   # 2% denial for hospital claims
+    extras_approval_rate: 0.92     # 8% denial for extras claims  
+    ambulance_approval_rate: 0.95  # 5% denial for ambulance claims
+    
+    # Weights for STOCHASTIC denials only (must sum to 1.0)
+    # Note: limits_exhausted, waiting_period, membership_inactive are deterministic
+    # pre_existing only applies to hospital claims (redistributed for others)
+    stochastic_denial_weights:
+      policy_exclusions: 0.50   # Service not covered under policy terms
+      pre_existing: 0.24        # Pre-existing condition exclusion (hospital only)
+      provider_issues: 0.16     # Non-contracted provider, incorrect billing
+      administrative: 0.10      # Missing documentation, late lodgement
+
+# Lifecycle events - annual rates applied daily
+# These drive member product changes and churn
+events:
+  upgrade_rate: 0.05       # 5% of policies upgrade per year (e.g., Bronze→Silver)
+  downgrade_rate: 0.03     # 3% of policies downgrade per year (e.g., Gold→Silver)
+  cancellation_rate: 0.08  # 8% annual churn (industry average)
+  suspension_rate: 0.02    # 2% suspend for travel/hardship
+
+billing:
+  final_payment_success_rate: 0.95  # 95% success after all retries
+  max_debit_retries: 2              # 2 retries after initial failure (3 total attempts)
+  retry_interval_days: 3            # 3 days between retry attempts
+  days_to_arrears: 14               # Days past due before arrears record created
+  days_to_suspension: 30            # Days past due before policy suspended (claims blocked)
+  days_to_lapse: 60                 # Days past due (~2 months) before policy lapsed (new policy required)
+
+# Local database (commented out)
+database:
+  host: localhost
+  port: 5432
+  database: brickwell_health
+  username: brickwell
+  password: "${BRICKWELL_DB_PASSWORD:-brickwell_dev}"
+  pool_size: 5
+  batch_size: 10000
+
+# Azure Databricks PostgreSQL
+# database:
+#   host: instance-9b18294e-e1e2-4860-b327-59f5c5d29872.database.azuredatabricks.net
+#   port: 5432
+#   database: databricks_postgres
+#   username: mehdi.modarressi@databricks.com
+#   password: "${BRICKWELL_DB_PASSWORD:-}"
+#   sslmode: require
+#   pool_size: 5
+#   batch_size: 1000
+
+parallel:
+  num_workers: 10
+  checkpoint_interval_minutes: 43200
+
+reference_data_path: "data/reference"
+seed: 42
