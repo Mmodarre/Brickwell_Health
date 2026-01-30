@@ -34,6 +34,8 @@ class BatchWriter:
     TABLE_FLUSH_ORDER = [
         # Core entities (no dependencies)
         "member",
+        # Member children (depend on member)
+        "member_update",
         "application",
         # Application children
         "application_member",
@@ -176,6 +178,55 @@ class BatchWriter:
 
         # Not in buffer - try to update in database
         return self._update_in_database(table_name, key_field, key_value, updates)
+
+    def is_in_buffer(self, table_name: str, key_field: str, key_value: Any) -> bool:
+        """
+        Check if a record exists in the buffer.
+
+        Used by CDC-aware code to determine if a flush is needed before
+        updating a record to ensure the INSERT is captured separately.
+
+        Args:
+            table_name: Name of the database table
+            key_field: Primary key field name
+            key_value: Value of the primary key to match
+
+        Returns:
+            True if record is in buffer, False otherwise
+        """
+        key_str = str(key_value)
+        if table_name in self._buffers:
+            for record in self._buffers[table_name]:
+                if str(record.get(key_field)) == key_str:
+                    return True
+        return False
+
+    def flush_for_cdc(self, table_name: str, key_field: str, key_value: Any) -> bool:
+        """
+        Flush all buffers if a specific record is still in buffer.
+
+        This ensures INSERT is committed to DB before UPDATE, making
+        both events visible to CDC consumers.
+
+        Args:
+            table_name: Name of the database table
+            key_field: Primary key field name
+            key_value: Value of the primary key to match
+
+        Returns:
+            True if flush was triggered, False if record was already in DB
+        """
+        if self.is_in_buffer(table_name, key_field, key_value):
+            logger.debug(
+                "cdc_flush_triggered",
+                table=table_name,
+                key_field=key_field,
+                key_value=str(key_value),
+                reason="ensure_insert_before_update",
+            )
+            self.flush_all()
+            return True
+        return False
 
     def _update_in_database(
         self,

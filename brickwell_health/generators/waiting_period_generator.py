@@ -4,8 +4,8 @@ Waiting period generator for Brickwell Health Simulator.
 Generates waiting period records for policy members.
 """
 
-from datetime import date, datetime
-from typing import Any
+from datetime import date
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from brickwell_health.domain.coverage import CoverageCreate, WaitingPeriodCreate
@@ -18,6 +18,9 @@ from brickwell_health.domain.policy import PolicyMemberCreate
 from brickwell_health.generators.base import BaseGenerator
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.utils.time_conversion import add_months
+
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
 
 
 class WaitingPeriodGenerator(BaseGenerator[WaitingPeriodCreate]):
@@ -39,7 +42,13 @@ class WaitingPeriodGenerator(BaseGenerator[WaitingPeriodCreate]):
         WaitingPeriodType.PSYCHIATRIC: 2,
     }
 
-    def __init__(self, rng, reference, id_generator: IDGenerator):
+    def __init__(
+        self,
+        rng,
+        reference,
+        id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the waiting period generator.
 
@@ -47,8 +56,9 @@ class WaitingPeriodGenerator(BaseGenerator[WaitingPeriodCreate]):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
 
     def generate(
@@ -113,7 +123,7 @@ class WaitingPeriodGenerator(BaseGenerator[WaitingPeriodCreate]):
             exemption_granted=is_transfer,
             exemption_type="Transfer" if is_transfer else None,
             exemption_reason=waiver_reason,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 

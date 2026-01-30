@@ -206,6 +206,39 @@ class ReferenceDataLoader:
         """Get hospital clinical categories."""
         return self.load("clinical_category.json")
 
+    def get_clinical_category_wp_mapping(self) -> dict[int, str]:
+        """
+        Build mapping from clinical_category_id to waiting_period_type.
+
+        This maps hospital clinical categories to the specialized waiting period
+        that applies to them:
+        - Obstetric categories (pregnancy-related): blocked by Obstetric WP
+        - Psychiatric category: blocked by Psychiatric WP
+        - All others: only blocked by General WP (and probabilistically by Pre-existing)
+
+        Returns:
+            Dict mapping clinical_category_id -> "Obstetric" | "Psychiatric" | "General"
+        """
+        categories = self.get_clinical_categories()
+
+        # Categories that map to specialized waiting periods (based on category_code)
+        obstetric_codes = {"PREGNANCY", "ASSISTED_REPRO", "MISCARRIAGE_TERM"}
+        psychiatric_codes = {"PSYCHIATRIC"}
+
+        mapping = {}
+        for cat in categories:
+            cat_id = cat.get("clinical_category_id")
+            code = cat.get("category_code", "")
+
+            if code in obstetric_codes:
+                mapping[cat_id] = "Obstetric"
+            elif code in psychiatric_codes:
+                mapping[cat_id] = "Psychiatric"
+            else:
+                mapping[cat_id] = "General"
+
+        return mapping
+
     def get_product_benefits(self, product_id: int) -> list[dict[str, Any]]:
         """Get benefits for a specific product."""
         benefits = self.load("product_benefit.json")

@@ -14,7 +14,7 @@ simulation:
 scale:
   # Target 100k members by end of warmup (2 years)
   # This drives acquisition rate: ~140/day to reach 100k in 730 days
-  target_member_count: 3000
+  target_member_count: 10000
   target_growth_rate: 0.03   # 3% annual growth after warmup
   target_churn_rate: 0.068   # 6.8% annual churn (industry average)
 
@@ -47,22 +47,28 @@ claims:
   # Legacy parameters (kept for backwards compatibility)
   uncovered_claim_attempt_rate: 0.05  # 5% of members attempt claims without coverage (uses placeholder coverage_id)
 
-  # Hospital frequency (Poisson lambda by age group) - based on APRA 2024-2025 data
+  # Hospital frequency (Poisson lambda by age group) - calibrated to APRA June 2025 data
+  # Based on 5.12M episodes / 12.53M insured = 0.408 overall episodes/person/year
+  # ~40.9% of PHI members have ≥1 admission per year
   hospital_frequency:
-    "18-30": 0.3   # Young adults: low utilization
-    "31-45": 0.5   # Middle age: moderate utilization
-    "46-60": 1.2   # Established: increasing needs
-    "61-70": 2.0   # Baby Boomers: 68% claim 1-2x/year
-    "71+": 2.5     # Elderly: highest utilization
+    "18-30": 0.17   # Young adults: ~14-18% admission rate
+    "31-45": 0.28   # Middle age: ~22-26% admission rate
+    "46-60": 0.38   # Established: ~30-33% admission rate
+    "61-70": 0.48   # Baby Boomers: ~36-39% admission rate
+    "71+": 0.55     # Elderly: ~39-45% admission rate
 
-  # Hospital severity (lognormal parameters)
-  # mu=8.0, sigma=1.5 produces median ~$2,981, matches APRA data
+  # Hospital severity (normal distribution with bounds)
+  # Uses normal instead of lognormal to match APRA shape (median > mean)
+  # Base charge only - accommodation, prosthesis, MBS add on top
   hospital_severity:
-    mu: 8.0
-    sigma: 1.5
+    mean: 2800    # Mean base charge ($)
+    std: 700      # Standard deviation ($)
+    floor: 500    # Minimum (prevents negatives)
+    ceiling: 8000 # Maximum base charge (high claims via separate tier if enabled)
 
-  # High-claim distribution (8.8% of hospital claims exceed $10k)
-  high_claim_probability: 0.088
+  # High-claim distribution (disabled to match APRA symmetric shape)
+  # Set to 0.088 to enable 8.8% high-claim tier for realistic outliers
+  high_claim_probability: 0.0
   high_claim_tiers:
     - range: [10000, 20000]
       weight: 0.634
@@ -84,33 +90,35 @@ claims:
     major: 0.1         # Crowns, root canals: rare
 
   # Dental costs by sub-category (normal distribution parameters)
+  # Calibrated to APRA June 2025 data: avg dental benefit $68/service
   dental_costs:
     preventative:
-      mean: 175
-      std: 35
+      mean: 60      # Was 175 - APRA shows $60-61 median
+      std: 15
     general:
-      mean: 280
-      std: 90
+      mean: 150     # Was 280 - APRA shows $150-180 median
+      std: 40
     major:
-      mean: 1300
-      std: 450
+      mean: 650     # Was 1300 - APRA shows $650 avg benefit
+      std: 200
 
   # Other extras services (frequency = annual Poisson lambda)
+  # Calibrated to APRA June 2025 data for benefit amounts
   optical:
-    frequency: 0.8
-    mean: 350
-    std: 100
+    frequency: 0.7    # Was 0.8 - slight reduction
+    mean: 83          # Was 350 - APRA shows $83/service
+    std: 25
 
   physiotherapy:
-    frequency: 1.5
-    mean: 85
-    std: 20
+    frequency: 1.0    # Was 1.5 - APRA shows ~0.8/year
+    mean: 41          # Was 85 - APRA shows $41/service
+    std: 12
     age_65_multiplier: 1.5  # 50% more frequent for 65+
 
   chiropractic:
-    frequency: 1.2
-    mean: 70
-    std: 15
+    frequency: 0.8    # Was 1.2 - APRA shows ~0.6/year
+    mean: 35          # Was 70 - APRA shows $35/service
+    std: 10
 
   # Ambulance (unchanged from original)
   ambulance:
@@ -135,6 +143,33 @@ claims:
       provider_issues: 0.16     # Non-contracted provider, incorrect billing
       administrative: 0.10      # Missing documentation, late lodgement
 
+  # Processing delays for claim lifecycle transitions
+  # Simulates realistic claim processing timelines with auto-adjudication
+  processing_delays:
+    assessment_days: [1, 3]     # Fallback if auto-adjudication disabled
+    approval_days: [0, 1]       # Days from assessment to approval
+    payment_days: [1, 3]        # Days from approval to payment
+
+    # Auto-adjudication configuration (industry benchmarks 2024-2025)
+    # Auto-adjudicated claims process same-day; manual claims take 3-14 days
+    auto_adjudication:
+      # Auto-adjudication rates by claim type
+      extras_auto_rate: 0.85     # 85% - standardized item codes, simple rules
+      hospital_auto_rate: 0.65   # 65% - complex DRGs, clinical reviews
+      ambulance_auto_rate: 0.92  # 92% - fixed state-based rates
+
+      # Lognormal parameters for auto-adjudicated claims (median ~0.5 days)
+      auto_assessment_mu: -0.7   # exp(-0.7) ≈ 0.5 days
+      auto_assessment_sigma: 0.5
+
+      # Lognormal parameters for manual review claims (median ~5 days)
+      manual_assessment_mu: 1.6  # exp(1.6) ≈ 5 days
+      manual_assessment_sigma: 0.6
+
+      # Maximum processing days (caps lognormal tail)
+      max_auto_days: 2
+      max_manual_days: 21
+
 # Lifecycle events - annual rates applied daily
 # These drive member product changes and churn
 events:
@@ -143,8 +178,49 @@ events:
   cancellation_rate: 0.08  # 8% annual churn (industry average)
   suspension_rate: 0.02    # 2% suspend for travel/hardship
 
+# Member lifecycle events - annual rates for demographic changes
+member_lifecycle:
+  # Annual rates (applied daily as rate/365)
+  address_change_rate: 0.12      # 12% of members move annually
+  phone_change_rate: 0.08        # 8% change phone annually
+  email_change_rate: 0.05        # 5% change email annually
+  name_change_rate: 0.015        # 1.5% change name (marriage/divorce)
+  marital_status_change_rate: 0.02  # 2% marital status change
+  preferred_name_rate: 0.01      # 1% update preferred name
+
+  # Medicare renewal happens when card expires (deterministic)
+  medicare_renewal_advance_days: 30  # Renew 30 days before expiry
+
+  # Death rates by age group (annual, age-weighted)
+  # Based on Australian mortality statistics
+  death_rates:
+    "18-30": 0.0005   # 0.05%
+    "31-45": 0.001    # 0.1%
+    "46-60": 0.003    # 0.3%
+    "61-70": 0.008    # 0.8%
+    "71-80": 0.02     # 2%
+    "81+": 0.05       # 5%
+
+  # Correlation settings
+  name_change_triggers_marital: 0.8  # 80% of name changes also change marital status
+
+  # State change weights (for address moves)
+  interstate_move_rate: 0.15  # 15% of moves are interstate
+
+  # Initial marital status distribution for new members
+  initial_marital_status:
+    Single: 0.35
+    Married: 0.40
+    DeFacto: 0.15
+    Divorced: 0.07
+    Separated: 0.02
+    Widowed: 0.01
+
 billing:
-  final_payment_success_rate: 0.95  # 95% success after all retries
+  # Payment success rate after all retries (initial + 2 retries = 3 attempts)
+  # 0.998 = ~0.2% monthly failure → ~2.4% annual billing lapse (industry-realistic)
+  # Previous 0.95 caused compound failures: 5%/month → 46% annual → 99% over 5 years
+  final_payment_success_rate: 0.998
   max_debit_retries: 2              # 2 retries after initial failure (3 total attempts)
   retry_interval_days: 3            # 3 days between retry attempts
   days_to_arrears: 14               # Days past due before arrears record created
@@ -178,3 +254,171 @@ parallel:
 
 reference_data_path: "data/reference"
 seed: 42
+
+# LLM Configuration (for deferred post-simulation processing)
+# See docs/NBA_DATA_SIMULATION_SPEC.md for full details
+# See scripts/test_nps_ai_query.py for reference implementation
+llm:
+  # Model for Databricks ai_query (tested models)
+  # - databricks-claude-haiku-4-5: Fast, clean output, harsher NPS scores
+  # - databricks-gpt-5-2: Balanced, moderate NPS scores
+  # - databricks-qwen3-next-80b-a3b-instruct: Fast, emotional verbatim, clean JSON
+  model: "databricks-qwen3-next-80b-a3b-instruct"
+  
+  # Context limits (for building llm_context JSON during simulation)
+  max_claims_history: 5
+  max_interaction_history: 3
+  claims_history_months: 12
+  interaction_history_months: 6
+  
+  # Prior survey context (for longitudinal processing)
+  max_prior_nps_surveys: 3
+  max_prior_complaints: 2
+  feedback_summary_length: 200
+  
+  # Validation
+  enforce_score_consistency: true
+  max_driver_nps_deviation: 3
+  
+  # Prompt Templates
+  # Use {placeholder} for dynamic values injected at runtime
+  # Available: {member_context}, {prior_surveys_section}
+  prompts:
+    nps_survey: |
+      Generate a realistic NPS survey response as JSON for an Australian private health insurance member.
+      
+      === MEMBER CONTEXT ===
+      {member_context}
+      
+      {prior_surveys_section}
+      
+      === PATTERN ANALYSIS INSTRUCTIONS ===
+      Analyze the claim_history and current_claim to identify patterns:
+      
+      1. SAME SERVICE TYPE, DIFFERENT OUTCOME
+         - Was this service type previously rejected but now approved? → Positive turnaround, improved sentiment
+         - Was this service type previously approved but now rejected? → Negative surprise, worse sentiment
+      
+      2. REPEATED ISSUES
+         - Multiple rejections for same/different services? → Compounding frustration
+         - Pattern of slow processing? → Eroding trust
+      
+      3. SERVICE RECOVERY
+         - Did member call to complain? Was it resolved? → Affects sentiment trajectory
+      
+      4. OVERALL TRAJECTORY
+         - Are recent claims better or worse than older claims?
+         - Consider billing issues, digital engagement, premium increases
+      
+      === SCORING GUIDELINES ===
+      - Australian health insurance NPS is typically low (industry avg 0-30)
+      - Claim rejection is the strongest negative driver (-3 to -5 on NPS)
+      - Same type rejection→approval = cautious positive (+2 to +3)
+      - Driver scores should correlate with NPS (within ±3 points typically)
+      - Detractors (0-6) more likely to consent to follow-up (60%)
+      
+      === OUTPUT FORMAT ===
+      Respond with ONLY valid JSON (no markdown, no explanation):
+      {{
+          "nps_score": <0-10>,
+          "driver_claims_processing": <0-10>,
+          "driver_customer_service": <0-10>,
+          "driver_value_for_money": <0-10>,
+          "driver_coverage_clarity": <0-10>,
+          "driver_digital_experience": <0-10>,
+          "feedback_text": "<1-3 sentences in Australian English referencing specific experiences>",
+          "feedback_improvement": "<suggestion or null>",
+          "sentiment_score": <-1.0 to 1.0>,
+          "sentiment_label": "<Positive|Neutral|Negative>",
+          "feedback_themes": ["<theme1>", "<theme2>"],
+          "follow_up_consent": <true|false>
+      }}
+    
+    complaint: |
+      Generate a realistic complaint description as JSON for an Australian private health insurance member.
+      
+      === MEMBER CONTEXT ===
+      {member_context}
+      
+      === COMPLAINT CONTEXT ===
+      - Complaint Category: {complaint_category}
+      - Trigger Event: {trigger_event}
+      - Related Claim/Invoice: {related_context}
+      
+      === INSTRUCTIONS ===
+      Generate a complaint description that:
+      1. References specific dates, amounts, and services from the context
+      2. Uses Australian English and natural language
+      3. Reflects the frustration level appropriate to the situation
+      4. Mentions any prior unresolved issues if present
+      
+      === OUTPUT FORMAT ===
+      Respond with ONLY valid JSON:
+      {{
+          "description": "<2-4 sentences describing the complaint>",
+          "desired_outcome": "<what the member wants>",
+          "escalation_requested": <true|false>,
+          "sentiment_score": <-1.0 to 0>,
+          "key_issues": ["<issue1>", "<issue2>"]
+      }}
+    
+    interaction_summary: |
+      Generate a realistic interaction summary as JSON for an Australian private health insurance customer service interaction.
+      
+      === MEMBER CONTEXT ===
+      {member_context}
+      
+      === INTERACTION CONTEXT ===
+      - Interaction Type: {interaction_type}
+      - Channel: {channel}
+      - Duration: {duration_minutes} minutes
+      - First Contact Resolution: {fcr}
+      - Related To: {related_context}
+      
+      === INSTRUCTIONS ===
+      Generate an agent note/summary that:
+      1. Uses professional but natural customer service language
+      2. References specific policy/claim details from context
+      3. Notes any follow-up actions required
+      4. Indicates member sentiment and resolution status
+      
+      === OUTPUT FORMAT ===
+      Respond with ONLY valid JSON:
+      {{
+          "summary": "<2-3 sentences summarizing the interaction>",
+          "member_sentiment": "<Positive|Neutral|Frustrated|Angry>",
+          "key_topics": ["<topic1>", "<topic2>"],
+          "follow_up_required": <true|false>,
+          "follow_up_action": "<action or null>"
+      }}
+    
+    csat_survey: |
+      Generate a realistic CSAT survey response as JSON for an Australian private health insurance member following a customer service interaction.
+      
+      === MEMBER CONTEXT ===
+      {member_context}
+      
+      === INTERACTION CONTEXT ===
+      - Interaction Type: {interaction_type}
+      - Channel: {channel}
+      - Wait Time: {wait_time_minutes} minutes
+      - Duration: {duration_minutes} minutes
+      - First Contact Resolution: {fcr}
+      - Related To: {related_context}
+      
+      === SCORING GUIDELINES ===
+      - CSAT (1-5): 1=Very Dissatisfied, 5=Very Satisfied
+      - Effort Score (1-5): 1=Very Easy, 5=Very Difficult
+      - Long wait times (>10 min) negatively impact scores
+      - FCR=False typically reduces satisfaction by 1-2 points
+      - Consider member's overall history and sentiment
+      
+      === OUTPUT FORMAT ===
+      Respond with ONLY valid JSON:
+      {{
+          "satisfaction_score": <1-5>,
+          "effort_score": <1-5>,
+          "recommend_agent": <true|false>,
+          "feedback_text": "<1-2 sentences about the interaction>",
+          "sentiment_label": "<Positive|Neutral|Negative>"
+      }}

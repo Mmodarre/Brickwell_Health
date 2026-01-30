@@ -24,8 +24,10 @@ from brickwell_health.domain.enums import (
     SuspensionType,
     SuspensionStatus,
     Gender,
+    MaritalStatus,
+    MemberChangeType,
 )
-from brickwell_health.domain.member import MemberCreate, Member
+from brickwell_health.domain.member import MemberCreate, Member, MemberUpdate
 from brickwell_health.domain.policy import PolicyCreate, Policy, PolicyMemberCreate
 from brickwell_health.domain.application import (
     ApplicationCreate,
@@ -70,9 +72,12 @@ __all__ = [
     "SuspensionType",
     "SuspensionStatus",
     "Gender",
+    "MaritalStatus",
+    "MemberChangeType",
     # Member
     "MemberCreate",
     "Member",
+    "MemberUpdate",
     # Policy
     "PolicyCreate",
     "Policy",

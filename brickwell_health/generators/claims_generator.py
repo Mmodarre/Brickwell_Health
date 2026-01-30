@@ -4,9 +4,9 @@ Claims generator for Brickwell Health Simulator.
 Generates claims (Extras, Hospital, Ambulance) for policy members.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 # Placeholder coverage ID for rejected claims (members attempting to claim without coverage)
@@ -38,6 +38,9 @@ from brickwell_health.config.models import ClaimsConfig
 from brickwell_health.generators.base import BaseGenerator
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.statistics.claim_propensity import ClaimPropensityModel
+
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
 
 
 class ClaimsGenerator(BaseGenerator[ClaimCreate]):
@@ -73,103 +76,105 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
     }
 
     # Prosthesis item catalog (simplified - billing code, description, avg cost range)
+    # Calibrated to ~40% of original values to match APRA/IHACPA prosthesis benefit data
     PROSTHESIS_CATALOG = {
         "hip_replacement": [
-            ("HIP001", "Total Hip Prosthesis - Cemented", (8000, 15000)),
-            ("HIP002", "Total Hip Prosthesis - Uncemented", (10000, 18000)),
-            ("HIP003", "Hip Resurfacing Prosthesis", (9000, 14000)),
+            ("HIP001", "Total Hip Prosthesis - Cemented", (3200, 6000)),
+            ("HIP002", "Total Hip Prosthesis - Uncemented", (4000, 7200)),
+            ("HIP003", "Hip Resurfacing Prosthesis", (3600, 5600)),
         ],
         "knee_replacement": [
-            ("KNE001", "Total Knee Prosthesis - Standard", (7000, 12000)),
-            ("KNE002", "Total Knee Prosthesis - High Flex", (9000, 15000)),
-            ("KNE003", "Unicompartmental Knee Prosthesis", (6000, 10000)),
+            ("KNE001", "Total Knee Prosthesis - Standard", (2800, 4800)),
+            ("KNE002", "Total Knee Prosthesis - High Flex", (3600, 6000)),
+            ("KNE003", "Unicompartmental Knee Prosthesis", (2400, 4000)),
         ],
         "spinal_fusion": [
-            ("SPN001", "Spinal Fusion Cage - Cervical", (3000, 6000)),
-            ("SPN002", "Spinal Fusion Cage - Lumbar", (4000, 8000)),
-            ("SPN003", "Pedicle Screw System", (5000, 12000)),
+            ("SPN001", "Spinal Fusion Cage - Cervical", (1200, 2400)),
+            ("SPN002", "Spinal Fusion Cage - Lumbar", (1600, 3200)),
+            ("SPN003", "Pedicle Screw System", (2000, 4800)),
         ],
         "joint_implant": [
-            ("JNT001", "Shoulder Prosthesis", (6000, 12000)),
-            ("JNT002", "Ankle Prosthesis", (5000, 10000)),
-            ("JNT003", "Elbow Prosthesis", (5000, 9000)),
+            ("JNT001", "Shoulder Prosthesis", (2400, 4800)),
+            ("JNT002", "Ankle Prosthesis", (2000, 4000)),
+            ("JNT003", "Elbow Prosthesis", (2000, 3600)),
         ],
         "pacemaker": [
-            ("PAC001", "Single Chamber Pacemaker", (4000, 8000)),
-            ("PAC002", "Dual Chamber Pacemaker", (6000, 12000)),
-            ("PAC003", "Pacemaker Lead", (1500, 3000)),
+            ("PAC001", "Single Chamber Pacemaker", (1600, 3200)),
+            ("PAC002", "Dual Chamber Pacemaker", (2400, 4800)),
+            ("PAC003", "Pacemaker Lead", (600, 1200)),
         ],
         "cardiac_device": [
-            ("ICD001", "Implantable Cardioverter Defibrillator", (15000, 35000)),
-            ("ICD002", "ICD Lead", (3000, 6000)),
+            ("ICD001", "Implantable Cardioverter Defibrillator", (6000, 14000)),
+            ("ICD002", "ICD Lead", (1200, 2400)),
         ],
         "cardiac_stent": [
-            ("STN001", "Drug Eluting Stent", (2000, 5000)),
-            ("STN002", "Bare Metal Stent", (1000, 2500)),
-            ("STN003", "Coronary Stent - Bioresorbable", (3000, 7000)),
+            ("STN001", "Drug Eluting Stent", (800, 2000)),
+            ("STN002", "Bare Metal Stent", (400, 1000)),
+            ("STN003", "Coronary Stent - Bioresorbable", (1200, 2800)),
         ],
         "cardiac_valve": [
-            ("VAL001", "Mechanical Heart Valve", (8000, 15000)),
-            ("VAL002", "Bioprosthetic Heart Valve", (10000, 20000)),
-            ("VAL003", "TAVR Valve", (25000, 40000)),
+            ("VAL001", "Mechanical Heart Valve", (3200, 6000)),
+            ("VAL002", "Bioprosthetic Heart Valve", (4000, 8000)),
+            ("VAL003", "TAVR Valve", (10000, 16000)),
         ],
         "cochlear_implant": [
-            ("COC001", "Cochlear Implant System", (20000, 35000)),
-            ("COC002", "Cochlear Implant Processor", (8000, 15000)),
+            ("COC001", "Cochlear Implant System", (8000, 14000)),
+            ("COC002", "Cochlear Implant Processor", (3200, 6000)),
         ],
         "hernia_mesh": [
-            ("HRN001", "Hernia Mesh - Synthetic", (500, 1500)),
-            ("HRN002", "Hernia Mesh - Biological", (1500, 4000)),
+            ("HRN001", "Hernia Mesh - Synthetic", (200, 600)),
+            ("HRN002", "Hernia Mesh - Biological", (600, 1600)),
         ],
         "lens_implant": [
-            ("LNS001", "Intraocular Lens - Monofocal", (300, 800)),
-            ("LNS002", "Intraocular Lens - Multifocal", (1000, 2500)),
-            ("LNS003", "Intraocular Lens - Toric", (800, 2000)),
+            ("LNS001", "Intraocular Lens - Monofocal", (120, 320)),
+            ("LNS002", "Intraocular Lens - Multifocal", (400, 1000)),
+            ("LNS003", "Intraocular Lens - Toric", (320, 800)),
         ],
     }
 
     # Common MBS items by provider type and clinical category
     # (mbs_item_number, description, schedule_fee_range, typical_charge_multiplier)
+    # Fee ranges calibrated to ~40% of original to match PHI fund benefit portions
     MBS_ITEMS_BY_PROVIDER = {
         "Surgeon": [
-            ("30001", "Initial consultation", (85, 150), 1.5),
-            ("30003", "Subsequent consultation", (45, 85), 1.5),
-            ("30571", "Surgical procedure - minor", (200, 500), 2.0),
-            ("30572", "Surgical procedure - intermediate", (500, 1200), 2.0),
-            ("30573", "Surgical procedure - major", (1200, 3000), 2.5),
-            ("35503", "Orthopaedic procedure", (1500, 4000), 2.5),
-            ("35506", "Joint procedure - major", (2000, 5000), 2.5),
-            ("37800", "Abdominal surgery", (1000, 3000), 2.0),
-            ("38200", "Cardiac surgery", (3000, 8000), 2.5),
+            ("30001", "Initial consultation", (35, 60), 1.5),
+            ("30003", "Subsequent consultation", (18, 35), 1.5),
+            ("30571", "Surgical procedure - minor", (80, 200), 2.0),
+            ("30572", "Surgical procedure - intermediate", (200, 480), 2.0),
+            ("30573", "Surgical procedure - major", (480, 1200), 2.5),
+            ("35503", "Orthopaedic procedure", (600, 1600), 2.5),
+            ("35506", "Joint procedure - major", (800, 2000), 2.5),
+            ("37800", "Abdominal surgery", (400, 1200), 2.0),
+            ("38200", "Cardiac surgery", (1200, 3200), 2.5),
         ],
         "Anesthetist": [
-            ("20100", "Anaesthesia - basic", (150, 300), 1.3),
-            ("20110", "Anaesthesia - intermediate", (300, 600), 1.3),
-            ("20120", "Anaesthesia - complex", (600, 1200), 1.5),
-            ("20200", "Epidural anaesthesia", (400, 800), 1.5),
-            ("20500", "Post-operative pain management", (100, 250), 1.3),
+            ("20100", "Anaesthesia - basic", (60, 120), 1.3),
+            ("20110", "Anaesthesia - intermediate", (120, 240), 1.3),
+            ("20120", "Anaesthesia - complex", (240, 480), 1.5),
+            ("20200", "Epidural anaesthesia", (160, 320), 1.5),
+            ("20500", "Post-operative pain management", (40, 100), 1.3),
         ],
         "Assistant": [
-            ("51300", "Surgical assistant - minor", (100, 250), 1.2),
-            ("51303", "Surgical assistant - intermediate", (200, 400), 1.2),
-            ("51306", "Surgical assistant - major", (400, 800), 1.3),
+            ("51300", "Surgical assistant - minor", (40, 100), 1.2),
+            ("51303", "Surgical assistant - intermediate", (80, 160), 1.2),
+            ("51306", "Surgical assistant - major", (160, 320), 1.3),
         ],
         "Physician": [
-            ("104", "Initial consultation - physician", (150, 300), 1.5),
-            ("105", "Subsequent consultation", (75, 150), 1.5),
-            ("116", "Specialist consultation", (200, 400), 1.8),
-            ("132", "Emergency consultation", (250, 500), 2.0),
+            ("104", "Initial consultation - physician", (60, 120), 1.5),
+            ("105", "Subsequent consultation", (30, 60), 1.5),
+            ("116", "Specialist consultation", (80, 160), 1.8),
+            ("132", "Emergency consultation", (100, 200), 2.0),
         ],
         "Pathology": [
-            ("65070", "Blood tests - basic panel", (30, 80), 1.0),
-            ("65120", "Blood tests - comprehensive", (80, 200), 1.0),
-            ("73525", "Histopathology", (100, 300), 1.0),
+            ("65070", "Blood tests - basic panel", (12, 32), 1.0),
+            ("65120", "Blood tests - comprehensive", (32, 80), 1.0),
+            ("73525", "Histopathology", (40, 120), 1.0),
         ],
         "Radiology": [
-            ("57506", "X-ray", (50, 150), 1.2),
-            ("57700", "CT scan", (200, 600), 1.3),
-            ("63001", "MRI scan", (300, 800), 1.3),
-            ("57960", "Ultrasound", (80, 200), 1.2),
+            ("57506", "X-ray", (20, 60), 1.2),
+            ("57700", "CT scan", (80, 240), 1.3),
+            ("63001", "MRI scan", (120, 320), 1.3),
+            ("57960", "Ultrasound", (32, 80), 1.2),
         ],
     }
 
@@ -206,6 +211,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         rng,
         reference,
         id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
         config: ClaimsConfig | None = None,
     ):
         """
@@ -215,9 +221,10 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
             config: Optional claims configuration (uses defaults if not provided)
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
         self.propensity = ClaimPropensityModel(rng, reference, config)
 
@@ -292,7 +299,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         )
         gap_amount = charge_amount - benefit_amount
 
-        # Claim header
+        # Claim header - created as SUBMITTED for lifecycle transitions
         claim = ClaimCreate(
             claim_id=claim_id,
             claim_number=self.id_generator.generate_claim_number(),
@@ -300,11 +307,11 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             member_id=member.member_id,
             coverage_id=coverage.coverage_id,
             claim_type=ClaimType.EXTRAS,
-            claim_status=ClaimStatus.PAID,
+            claim_status=ClaimStatus.SUBMITTED,  # Changed from PAID for lifecycle
             service_date=service_date,
             lodgement_date=service_date,
-            assessment_date=service_date,
-            payment_date=service_date,
+            assessment_date=None,  # Set during lifecycle transition
+            payment_date=None,     # Set during lifecycle transition
             provider_id=self.uniform_int(1, 1000),
             hospital_id=None,
             total_charge=charge_amount,
@@ -316,14 +323,14 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             rejection_notes=None,
             claim_channel=ClaimChannel.HICAPS,
             pay_to="Member",
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
         # Get item code
         item_code = self._get_extras_item_code(service_type, dental_service_type)
 
-        # Claim line
+        # Claim line - created as Pending for lifecycle transitions
         claim_line = ClaimLineCreate(
             claim_line_id=claim_line_id,
             claim_id=claim_id,
@@ -338,13 +345,13 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             schedule_fee=None,
             benefit_amount=benefit_amount,
             gap_amount=gap_amount,
-            line_status="Paid",
+            line_status="Pending",  # Changed from "Paid" for lifecycle
             rejection_reason_id=None,
             provider_id=claim.provider_id,
             provider_number=None,
             tooth_number=self._generate_tooth_number() if service_type == "Dental" else None,
             body_part=None,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -363,7 +370,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             charge_amount=charge_amount,
             benefit_amount=benefit_amount,
             annual_limit_impact=benefit_amount,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -377,6 +384,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         admission_date: date,
         age: int,
         gender: str,
+        clinical_category_id: int | None = None,
         **kwargs: Any,
     ) -> tuple[ClaimCreate, list[ClaimLineCreate], HospitalAdmissionCreate, list[ProsthesisClaimCreate], list[MedicalServiceCreate]]:
         """
@@ -389,6 +397,10 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             admission_date: Date of admission
             age: Patient age
             gender: Patient gender
+            clinical_category_id: Optional pre-sampled clinical category ID.
+                If provided, uses this instead of sampling a new one.
+                This is used when the category was already sampled for
+                waiting period checks.
 
         Returns:
             Tuple of (ClaimCreate, list[ClaimLineCreate], HospitalAdmissionCreate, 
@@ -419,15 +431,17 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             self.propensity.sample_claim_amount("Hospital", age), 2
         )))
 
-        # Adjust for LOS
+        # Adjust for LOS - calibrated to IHACPA ward costs (~$350-400/day for PHI portion)
         if los > 0:
-            daily_rate = Decimal("1500")
+            daily_rate = Decimal("350")
             accommodation_charge = daily_rate * los
         else:
-            accommodation_charge = Decimal("2000")  # Day surgery rate
+            accommodation_charge = Decimal("800")  # Day surgery rate
 
-        # Clinical category - needed for medical services generation
-        clinical_category_id = self.propensity.sample_clinical_category(age, gender)
+        # Clinical category - use provided or sample new
+        # (provided when category was sampled for waiting period check)
+        if clinical_category_id is None:
+            clinical_category_id = self.propensity.sample_clinical_category(age, gender)
 
         # Generate prosthesis claims if applicable
         prosthesis_claims, prosthesis_charge = self._generate_prosthesis_claims(
@@ -455,7 +469,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         # Member gap for hospital claims is the excess amount they pay out-of-pocket
         gap_amount = excess_applied
 
-        # Claim header
+        # Claim header - created as SUBMITTED for lifecycle transitions
         claim = ClaimCreate(
             claim_id=claim_id,
             claim_number=self.id_generator.generate_claim_number(),
@@ -463,11 +477,11 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             member_id=member.member_id,
             coverage_id=coverage.coverage_id,
             claim_type=ClaimType.HOSPITAL,
-            claim_status=ClaimStatus.PAID,
+            claim_status=ClaimStatus.SUBMITTED,  # Changed from PAID for lifecycle
             service_date=admission_date,
             lodgement_date=discharge_date,
-            assessment_date=discharge_date,
-            payment_date=discharge_date,
+            assessment_date=None,  # Set during lifecycle transition
+            payment_date=None,     # Set during lifecycle transition
             provider_id=None,
             hospital_id=self.uniform_int(1, 200),
             total_charge=total_charge,
@@ -479,11 +493,11 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             rejection_notes=None,
             claim_channel=ClaimChannel.HOSPITAL,
             pay_to="Provider",
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
-        # Claim lines (simplified - accommodation)
+        # Claim lines (simplified - accommodation) - created as Pending for lifecycle
         claim_lines = [
             ClaimLineCreate(
                 claim_line_id=self.id_generator.generate_uuid(),
@@ -499,13 +513,13 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 schedule_fee=None,
                 benefit_amount=accommodation_charge,
                 gap_amount=Decimal("0"),
-                line_status="Paid",
+                line_status="Pending",  # Changed from "Paid" for lifecycle
                 rejection_reason_id=None,
                 provider_id=None,
                 provider_number=None,
                 tooth_number=None,
                 body_part=None,
-                created_at=datetime.now(),
+                created_at=self.get_current_datetime(),
                 created_by="SIMULATION",
             )
         ]
@@ -540,7 +554,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             co_payment_amount=Decimal("0"),
             contracted_hospital=True,
             informed_financial_consent=True,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -575,6 +589,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         benefit_amount = charge_amount  # Full coverage usually
         gap_amount = Decimal("0")
 
+        # Claim header - created as SUBMITTED for lifecycle transitions
         claim = ClaimCreate(
             claim_id=claim_id,
             claim_number=self.id_generator.generate_claim_number(),
@@ -582,11 +597,11 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             member_id=member.member_id,
             coverage_id=coverage.coverage_id,
             claim_type=ClaimType.AMBULANCE,
-            claim_status=ClaimStatus.PAID,
+            claim_status=ClaimStatus.SUBMITTED,  # Changed from PAID for lifecycle
             service_date=incident_date,
             lodgement_date=incident_date,
-            assessment_date=incident_date,
-            payment_date=incident_date,
+            assessment_date=None,  # Set during lifecycle transition
+            payment_date=None,     # Set during lifecycle transition
             provider_id=None,
             hospital_id=None,
             total_charge=charge_amount,
@@ -598,7 +613,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             rejection_notes=None,
             claim_channel=ClaimChannel.PAPER,
             pay_to="Member",
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -617,7 +632,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             state_scheme_contribution=Decimal("0"),
             ambulance_provider="State Ambulance Service",
             case_number=f"AMB{self.uniform_int(100000, 999999)}",
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -688,7 +703,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             rejection_notes=denial_reason.value,
             claim_channel=claim_channel,
             pay_to="N/A",  # No payment for rejected claims
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -895,7 +910,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 benefit_amount=benefit_amount,
                 gap_amount=gap_amount,
                 implant_date=implant_date,
-                created_at=datetime.now(),
+                created_at=self.get_current_datetime(),
                 created_by="SIMULATION",
             )
 
@@ -993,7 +1008,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                     procedure_laterality=None,
                     multiple_service_rule_applied=False,
                     multiple_service_percentage=None,
-                    created_at=datetime.now(),
+                    created_at=self.get_current_datetime(),
                     created_by="SIMULATION",
                 )
 

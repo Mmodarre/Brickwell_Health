@@ -292,11 +292,11 @@ class PHIRebateCalculator:
 
     Usage:
         # With reference data (preferred):
-        calc = PHIRebateCalculator(reference=reference_loader)
+        calc = PHIRebateCalculator(reference=reference_loader, sim_env=sim_env)
         rebate = calc.calculate_rebate(income, is_family, oldest_member_age)
 
         # Without reference data (uses hardcoded fallback values):
-        calc = PHIRebateCalculator()
+        calc = PHIRebateCalculator(sim_env=sim_env)
         rebate = calc.calculate_rebate(income, is_family, oldest_member_age)
     """
 
@@ -332,7 +332,7 @@ class PHIRebateCalculator:
         "Tier 3": Decimal("1.5"),
     }
 
-    def __init__(self, reference=None):
+    def __init__(self, reference=None, sim_env=None):
         """
         Initialize the PHI Rebate Calculator.
 
@@ -340,8 +340,15 @@ class PHIRebateCalculator:
             reference: Optional ReferenceDataLoader for loading rebate tiers
                       from phi_rebate_tier.json. If not provided, uses
                       hardcoded fallback values.
+            sim_env: Simulation environment for time access (required)
+
+        Raises:
+            ValueError: If sim_env is None
         """
+        if sim_env is None:
+            raise ValueError("sim_env is required - PHIRebateCalculator must use simulation time")
         self.reference = reference
+        self.sim_env = sim_env
 
     def calculate_rebate(
         self,
@@ -368,7 +375,7 @@ class PHIRebateCalculator:
                 - mls_liable: Whether MLS would apply without PHI
         """
         if financial_year is None:
-            financial_year = get_financial_year(date.today())
+            financial_year = get_financial_year(self.sim_env.current_date)
 
         # Try to use reference data first
         if self.reference is not None:
@@ -532,17 +539,23 @@ class RegulatoryCalculator:
     Provides a unified interface for all regulatory calculations.
     """
 
-    def __init__(self, reference=None):
+    def __init__(self, reference=None, sim_env=None):
         """
         Initialize with individual calculators.
 
         Args:
             reference: Optional ReferenceDataLoader for loading PHI rebate
                       tiers from reference data.
+            sim_env: Simulation environment for time access (required)
+
+        Raises:
+            ValueError: If sim_env is None
         """
+        if sim_env is None:
+            raise ValueError("sim_env is required - RegulatoryCalculator must use simulation time")
         self.lhc = LHCLoadingCalculator()
         self.age_discount = AgeBasedDiscountCalculator()
-        self.rebate = PHIRebateCalculator(reference=reference)
+        self.rebate = PHIRebateCalculator(reference=reference, sim_env=sim_env)
 
     def calculate_all_adjustments(
         self,

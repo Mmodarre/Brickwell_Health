@@ -134,10 +134,12 @@ class ClaimPropensityModel:
 
     def sample_hospital_claim_amount(self, age: int | None = None) -> float:
         """
-        Sample hospital claim amount using lognormal + high-claim distribution.
+        Sample hospital claim amount using normal distribution with bounds.
 
-        8.8% of claims are sampled from a tiered high-claim distribution (>$10k).
-        The remaining 91.2% come from a lognormal distribution (can also exceed $10k).
+        Uses normal distribution instead of lognormal to better match APRA data
+        where median ($2,981) > mean ($2,779), indicating near-symmetric distribution.
+        
+        Optional high-claim tier can be enabled for realistic outliers.
 
         Args:
             age: Optional age for any age-based adjustments
@@ -145,15 +147,18 @@ class ClaimPropensityModel:
         Returns:
             Claim amount in dollars
         """
-        # Check if this is a high-value claim (8.8% probability)
+        # Check if this is a high-value claim (configurable, default 0%)
         if self.rng.random() < self.config.high_claim_probability:
             return self._sample_high_claim()
 
-        # Standard claim: lognormal distribution
-        # mu=8.0, sigma=1.5 produces median ~$2,981 matching APRA data
-        mu = self.config.hospital_severity.mu
-        sigma = self.config.hospital_severity.sigma
-        return self.rng.lognormal(mu, sigma)
+        # Standard claim: normal distribution with floor and ceiling
+        mean = self.config.hospital_severity.mean
+        std = self.config.hospital_severity.std
+        floor = self.config.hospital_severity.floor
+        ceiling = self.config.hospital_severity.ceiling
+        
+        amount = self.rng.normal(mean, std)
+        return max(floor, min(amount, ceiling))
 
     def _sample_high_claim(self) -> float:
         """

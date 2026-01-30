@@ -78,12 +78,14 @@ class PaymentCreate(BaseModel):
     payment_amount: Decimal = Field(..., ge=0)
 
     payment_method: PaymentMethod
-    payment_status: PaymentStatus = PaymentStatus.COMPLETED
+    payment_status: PaymentStatus = PaymentStatus.PENDING  # Changed from COMPLETED for lifecycle transitions
 
     bank_reference: Optional[str] = Field(None, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
+    modified_at: Optional[datetime] = None
+    modified_by: Optional[str] = None
 
     def model_dump_db(self) -> dict:
         """Convert to dictionary for database insertion."""

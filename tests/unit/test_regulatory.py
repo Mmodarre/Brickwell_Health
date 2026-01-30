@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import pytest
 
+from brickwell_health.core.environment import SimulationEnvironment
 from brickwell_health.config.regulatory import (
     LHCLoadingCalculator,
     AgeBasedDiscountCalculator,
@@ -135,9 +136,9 @@ class TestAgeBasedDiscountCalculator:
 class TestPHIRebateCalculator:
     """Tests for PHI rebate calculations."""
 
-    def test_base_tier_rebate_under_65(self):
+    def test_base_tier_rebate_under_65(self, sim_env: SimulationEnvironment):
         """Base tier under-65 should get ~24.6% rebate."""
-        calc = PHIRebateCalculator()
+        calc = PHIRebateCalculator(sim_env=sim_env)
 
         result = calc.calculate_rebate(
             income=50000,
@@ -148,9 +149,9 @@ class TestPHIRebateCalculator:
         assert result["tier"] == "Base"
         assert result["rebate_percentage"] == Decimal("24.608")
 
-    def test_higher_rebate_for_over_70(self):
+    def test_higher_rebate_for_over_70(self, sim_env: SimulationEnvironment):
         """Over-70 should get higher rebate in same tier."""
-        calc = PHIRebateCalculator()
+        calc = PHIRebateCalculator(sim_env=sim_env)
 
         result_under_65 = calc.calculate_rebate(
             income=50000,
@@ -166,9 +167,9 @@ class TestPHIRebateCalculator:
 
         assert result_over_70["rebate_percentage"] > result_under_65["rebate_percentage"]
 
-    def test_tier_3_no_rebate(self):
+    def test_tier_3_no_rebate(self, sim_env: SimulationEnvironment):
         """High income (Tier 3) should get no rebate."""
-        calc = PHIRebateCalculator()
+        calc = PHIRebateCalculator(sim_env=sim_env)
 
         result = calc.calculate_rebate(
             income=200000,  # Above Tier 3 threshold
@@ -180,9 +181,9 @@ class TestPHIRebateCalculator:
         assert result["rebate_percentage"] == Decimal("0")
         assert result["mls_liable"] is True
 
-    def test_family_uses_family_thresholds(self):
+    def test_family_uses_family_thresholds(self, sim_env: SimulationEnvironment):
         """Family policies should use family income thresholds."""
-        calc = PHIRebateCalculator()
+        calc = PHIRebateCalculator(sim_env=sim_env)
 
         # Income that would be Tier 1 for single but Base for family
         result_single = calc.calculate_rebate(

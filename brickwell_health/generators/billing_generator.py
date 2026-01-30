@@ -4,9 +4,9 @@ Billing generator for Brickwell Health Simulator.
 Generates invoices, payments, and direct debit records.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from brickwell_health.domain.billing import (
@@ -29,13 +29,22 @@ from brickwell_health.generators.base import BaseGenerator
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.utils.time_conversion import first_of_month, add_months, last_of_month
 
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
+
 
 class BillingGenerator(BaseGenerator[InvoiceCreate]):
     """
     Generates billing records (invoices, payments, direct debits).
     """
 
-    def __init__(self, rng, reference, id_generator: IDGenerator):
+    def __init__(
+        self,
+        rng,
+        reference,
+        id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the billing generator.
 
@@ -43,8 +52,9 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
 
     def generate(self, **kwargs: Any) -> InvoiceCreate:
@@ -137,7 +147,7 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             total_amount=total_amount,
             paid_amount=Decimal("0"),
             balance_due=total_amount,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -166,6 +176,7 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
         if payment_id is None:
             payment_id = self.id_generator.generate_uuid()
 
+        # Payment created as PENDING - will be updated to COMPLETED/FAILED after DD result
         return PaymentCreate(
             payment_id=payment_id,
             payment_number=self.id_generator.generate_payment_number(),
@@ -174,9 +185,9 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             payment_date=payment_date,
             payment_amount=invoice.total_amount,
             payment_method=payment_method,
-            payment_status=PaymentStatus.COMPLETED,
+            payment_status=PaymentStatus.PENDING,  # Changed from COMPLETED for lifecycle
             bank_reference=f"DD{self.uniform_int(100000000, 999999999)}",
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -219,8 +230,8 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             purpose="PremiumDebit",
             is_active=True,
             is_verified=True,
-            verification_date=date.today(),
-            created_at=datetime.now(),
+            verification_date=self.get_current_date(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -263,7 +274,7 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             status="Active",
             cancellation_date=None,
             cancellation_reason=None,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -330,7 +341,7 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             payment_id=payment.payment_id if payment else None,
             retry_scheduled=retry_scheduled,
             retry_date=retry_date,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -371,7 +382,7 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             resolution_method=None,
             reminder_sent=False,
             reminder_date=None,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -421,7 +432,7 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
             processed_date=refund_date,
             bank_reference=f"REF{self.uniform_int(100000000, 999999999)}",
             approved_by="SIMULATION",
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 

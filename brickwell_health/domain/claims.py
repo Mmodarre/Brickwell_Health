@@ -55,6 +55,8 @@ class ClaimCreate(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
+    modified_at: Optional[datetime] = None
+    modified_by: Optional[str] = None
 
     def model_dump_db(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -66,10 +68,7 @@ class ClaimCreate(BaseModel):
 
 
 class Claim(ClaimCreate):
-    """Full claim model with audit fields."""
-
-    modified_at: Optional[datetime] = None
-    modified_by: Optional[str] = None
+    """Full claim model (inherits modified_at/modified_by from ClaimCreate)."""
 
     class Config:
         from_attributes = True
@@ -107,6 +106,8 @@ class ClaimLineCreate(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
+    modified_at: Optional[datetime] = None
+    modified_by: Optional[str] = None
 
 
 class HospitalAdmissionCreate(BaseModel):

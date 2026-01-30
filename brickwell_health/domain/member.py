@@ -4,12 +4,12 @@ Member domain models for Brickwell Health Simulator.
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from brickwell_health.domain.enums import Gender
+from brickwell_health.domain.enums import Gender, MaritalStatus, MemberChangeType
 
 
 class MemberCreate(BaseModel):
@@ -48,6 +48,9 @@ class MemberCreate(BaseModel):
     tax_file_number_provided: bool = False
     lhc_applicable: bool = False
 
+    # Demographics
+    marital_status: MaritalStatus = MaritalStatus.SINGLE
+
     # Audit
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
@@ -65,6 +68,7 @@ class MemberCreate(BaseModel):
         """Convert to dictionary for database insertion."""
         data = self.model_dump()
         data["gender"] = data["gender"].value if isinstance(data["gender"], Gender) else data["gender"]
+        data["marital_status"] = data["marital_status"].value if isinstance(data["marital_status"], MaritalStatus) else data["marital_status"]
         return data
 
 
@@ -132,3 +136,38 @@ class PHIRebateEntitlementCreate(BaseModel):
     end_date: Optional[date] = None
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
+
+
+class MemberUpdate(BaseModel):
+    """
+    Model for member update/change event.
+
+    Tracks all changes to member data for audit trail and downstream processing.
+    """
+
+    member_update_id: UUID
+    member_id: UUID
+    change_type: MemberChangeType
+    change_date: date
+
+    # Previous and new values (stored as JSON for flexibility)
+    previous_values: dict[str, Any] = Field(default_factory=dict)
+    new_values: dict[str, Any] = Field(default_factory=dict)
+
+    # Change context
+    reason: Optional[str] = Field(None, max_length=200)
+    triggered_by: Optional[str] = Field(None, max_length=50)  # "SIMULATION", "POLICY_EVENT", etc.
+
+    # Audit
+    created_at: datetime = Field(default_factory=datetime.now)
+    created_by: str = Field(default="SIMULATION", max_length=50)
+
+    def model_dump_db(self) -> dict:
+        """Convert to dictionary for database insertion."""
+        import json
+        data = self.model_dump()
+        data["change_type"] = data["change_type"].value if isinstance(data["change_type"], MemberChangeType) else data["change_type"]
+        # Convert dicts to JSON strings for JSONB columns
+        data["previous_values"] = json.dumps(data["previous_values"])
+        data["new_values"] = json.dumps(data["new_values"])
+        return data

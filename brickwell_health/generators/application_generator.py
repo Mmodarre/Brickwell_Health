@@ -6,7 +6,7 @@ Generates new policy applications with applicant data.
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from brickwell_health.domain.application import (
@@ -26,6 +26,9 @@ from brickwell_health.domain.enums import (
 from brickwell_health.domain.member import MemberCreate
 from brickwell_health.generators.base import BaseGenerator
 from brickwell_health.generators.id_generator import IDGenerator
+
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
 
 
 class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
@@ -66,7 +69,13 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
         "yes_rate": 0.08,  # 8% of females in childbearing age
     }
 
-    def __init__(self, rng, reference, id_generator: IDGenerator):
+    def __init__(
+        self,
+        rng,
+        reference,
+        id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the application generator.
 
@@ -74,8 +83,9 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
 
     def generate(
@@ -108,7 +118,7 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
             application_id = self.id_generator.generate_uuid()
 
         if submission_date is None:
-            submission_date = datetime.now()
+            submission_date = self.get_current_datetime()
 
         # Get primary member's state
         primary = members[0]
@@ -139,7 +149,7 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
             decision_by=None,
             decline_reason=None,
             state=state,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -172,7 +182,7 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
                 email=member.email,
                 mobile_phone=member.mobile_phone,
                 existing_member_id=None,
-                created_at=datetime.now(),
+                created_at=self.get_current_datetime(),
                 created_by="SIMULATION",
             )
             app_members.append(app_member)
@@ -330,7 +340,7 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
                 response_details=response_details,
                 declaration_date=declaration_date,
                 declaration_acknowledged=True,
-                created_at=datetime.now(),
+                created_at=self.get_current_datetime(),
                 created_by="SIMULATION",
             )
             declarations.append(declaration)
@@ -355,7 +365,7 @@ class ApplicationGenerator(BaseGenerator[ApplicationCreate]):
                     response_details=response_details,
                     declaration_date=declaration_date,
                     declaration_acknowledged=True,
-                    created_at=datetime.now(),
+                    created_at=self.get_current_datetime(),
                     created_by="SIMULATION",
                 )
                 declarations.append(declaration)

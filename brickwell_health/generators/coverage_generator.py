@@ -4,9 +4,9 @@ Coverage generator for Brickwell Health Simulator.
 Generates coverage records for policies.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from brickwell_health.domain.coverage import CoverageCreate
@@ -14,6 +14,9 @@ from brickwell_health.domain.enums import CoverageType, CoverageTier
 from brickwell_health.domain.policy import PolicyCreate
 from brickwell_health.generators.base import BaseGenerator
 from brickwell_health.generators.id_generator import IDGenerator
+
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
 
 
 class CoverageGenerator(BaseGenerator[CoverageCreate]):
@@ -23,7 +26,13 @@ class CoverageGenerator(BaseGenerator[CoverageCreate]):
     Creates Hospital, Extras, and Ambulance coverages based on product.
     """
 
-    def __init__(self, rng, reference, id_generator: IDGenerator):
+    def __init__(
+        self,
+        rng,
+        reference,
+        id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the coverage generator.
 
@@ -31,8 +40,9 @@ class CoverageGenerator(BaseGenerator[CoverageCreate]):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
 
     def generate(
@@ -73,7 +83,7 @@ class CoverageGenerator(BaseGenerator[CoverageCreate]):
             status="Active",
             tier=tier,
             excess_amount=excess,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -184,6 +194,6 @@ class CoverageGenerator(BaseGenerator[CoverageCreate]):
             status="Active",
             tier=new_tier,
             excess_amount=coverage.excess_amount,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )

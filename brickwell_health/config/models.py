@@ -132,16 +132,31 @@ class PolicyConfig(BaseModel):
 
 
 class HospitalSeverityConfig(BaseModel):
-    """Hospital claim severity parameters (lognormal distribution)."""
+    """Hospital claim severity parameters (normal distribution with bounds).
+    
+    Uses normal distribution instead of lognormal to better match APRA data
+    where median ($2,981) > mean ($2,779), indicating near-symmetric distribution.
+    """
 
-    mu: float = Field(
-        default=8.0,
-        description="Lognormal mu parameter. mu=8.0, sigma=1.5 produces median ~$2,981",
-    )
-    sigma: float = Field(
-        default=1.5,
+    mean: float = Field(
+        default=2800.0,
         ge=0,
-        description="Lognormal sigma parameter",
+        description="Mean base charge for hospital claims ($)",
+    )
+    std: float = Field(
+        default=700.0,
+        ge=0,
+        description="Standard deviation for hospital claims ($)",
+    )
+    floor: float = Field(
+        default=500.0,
+        ge=0,
+        description="Minimum claim amount (prevents negative values)",
+    )
+    ceiling: float = Field(
+        default=8000.0,
+        ge=0,
+        description="Maximum base claim amount (high claims handled separately if enabled)",
     )
 
 
@@ -245,6 +260,113 @@ class ClaimApprovalConfig(BaseModel):
         return v
 
 
+class AutoAdjudicationConfig(BaseModel):
+    """
+    Auto-adjudication configuration by claim type.
+    
+    Industry benchmarks (2024-2025):
+    - Overall auto-adjudication rate: 80-85%
+    - Extras/Dental: 85-90% (standardized item codes, simple benefit rules)
+    - Hospital: 60-70% (complex DRGs, clinical reviews, pre-auth)
+    - Ambulance: 90-95% (fixed state-based rates, simple rules)
+    
+    Auto-adjudicated claims process same-day; manual claims take 3-14 days.
+    """
+
+    # Auto-adjudication rates by claim type
+    extras_auto_rate: float = Field(
+        default=0.85,
+        ge=0,
+        le=1.0,
+        description="Probability extras claim is auto-adjudicated (85% industry benchmark)",
+    )
+    hospital_auto_rate: float = Field(
+        default=0.65,
+        ge=0,
+        le=1.0,
+        description="Probability hospital claim is auto-adjudicated (65% - lower due to complexity)",
+    )
+    ambulance_auto_rate: float = Field(
+        default=0.92,
+        ge=0,
+        le=1.0,
+        description="Probability ambulance claim is auto-adjudicated (92% - simple fixed rates)",
+    )
+
+    # Processing times for auto-adjudicated claims (lognormal parameters)
+    # Lognormal(mu, sigma) where mu=log(median), sigma controls spread
+    # median ~0.5 days means most processed same-day or next-day
+    auto_assessment_mu: float = Field(
+        default=-0.7,  # exp(-0.7) ≈ 0.5 days median
+        description="Lognormal mu for auto-adjudicated assessment time",
+    )
+    auto_assessment_sigma: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=2.0,
+        description="Lognormal sigma for auto-adjudicated assessment time",
+    )
+
+    # Processing times for manual review claims (lognormal parameters)
+    # median ~5 days, with tail extending to 14+ days
+    manual_assessment_mu: float = Field(
+        default=1.6,  # exp(1.6) ≈ 5 days median
+        description="Lognormal mu for manual review assessment time",
+    )
+    manual_assessment_sigma: float = Field(
+        default=0.6,
+        ge=0.1,
+        le=2.0,
+        description="Lognormal sigma for manual review assessment time",
+    )
+
+    # Maximum processing days (cap for lognormal tail)
+    max_auto_days: int = Field(
+        default=2,
+        ge=0,
+        le=7,
+        description="Maximum days for auto-adjudicated claims",
+    )
+    max_manual_days: int = Field(
+        default=21,
+        ge=7,
+        le=60,
+        description="Maximum days for manual review claims",
+    )
+
+
+class ClaimProcessingDelaysConfig(BaseModel):
+    """Processing delays for claim lifecycle transitions.
+    
+    These delays simulate realistic claim processing timelines:
+    - Assessment: Initial review of claim validity
+    - Approval: Decision on claim after assessment
+    - Payment: Processing of payment after approval
+    
+    Note: assessment_days is used as fallback if auto_adjudication is not configured.
+    When auto_adjudication is enabled, assessment times use lognormal distribution.
+    """
+
+    assessment_days: tuple[int, int] = Field(
+        default=(1, 3),
+        description="(min, max) days from lodgement to assessment (fallback if auto-adjudication disabled)",
+    )
+    approval_days: tuple[int, int] = Field(
+        default=(0, 1),
+        description="(min, max) days from assessment to approval",
+    )
+    payment_days: tuple[int, int] = Field(
+        default=(1, 3),
+        description="(min, max) days from approval to payment",
+    )
+
+    # Auto-adjudication configuration
+    auto_adjudication: AutoAdjudicationConfig = Field(
+        default_factory=AutoAdjudicationConfig,
+        description="Auto-adjudication rates and processing times by claim type",
+    )
+
+
 class ClaimsConfig(BaseModel):
     """Claims generation parameters based on APRA 2024-2025 data."""
 
@@ -262,13 +384,13 @@ class ClaimsConfig(BaseModel):
     # Hospital frequency (Poisson lambda by age group)
     hospital_frequency: dict[str, float] = Field(
         default={
-            "18-30": 0.3,
-            "31-45": 0.5,
-            "46-60": 1.2,
-            "61-70": 2.0,
-            "71+": 2.5,
+            "18-30": 0.17,
+            "31-45": 0.28,
+            "46-60": 0.38,
+            "61-70": 0.48,
+            "71+": 0.55,
         },
-        description="Poisson lambda for hospital admissions by age group",
+        description="Poisson lambda for hospital admissions by age group (APRA June 2025: 0.408 overall)",
     )
 
     # Hospital severity (lognormal parameters)
@@ -277,12 +399,12 @@ class ClaimsConfig(BaseModel):
         description="Lognormal parameters for hospital claim amounts",
     )
 
-    # High-claim distribution
+    # High-claim distribution (disabled by default to match APRA symmetric shape)
     high_claim_probability: float = Field(
-        default=0.088,
+        default=0.0,
         ge=0,
         le=1.0,
-        description="Probability that a hospital claim exceeds $10k (8.8% per APRA)",
+        description="Probability of sampling from high-claim tier (>$10k). Set to 0.088 for realistic outliers.",
     )
     high_claim_tiers: list[HighClaimTier] = Field(
         default=[
@@ -306,29 +428,29 @@ class ClaimsConfig(BaseModel):
         description="Poisson lambda by dental sub-category",
     )
 
-    # Dental costs by sub-category
+    # Dental costs by sub-category (calibrated to APRA June 2025 data)
     dental_costs: dict[str, ServiceCostConfig] = Field(
         default={
-            "preventative": ServiceCostConfig(mean=175, std=35),
-            "general": ServiceCostConfig(mean=280, std=90),
-            "major": ServiceCostConfig(mean=1300, std=450),
+            "preventative": ServiceCostConfig(mean=60, std=15),
+            "general": ServiceCostConfig(mean=150, std=40),
+            "major": ServiceCostConfig(mean=650, std=200),
         },
         description="Cost parameters by dental sub-category",
     )
 
-    # Other extras services
+    # Other extras services (calibrated to APRA June 2025 data)
     optical: ExtrasServiceConfig = Field(
-        default_factory=lambda: ExtrasServiceConfig(frequency=0.8, mean=350, std=100),
+        default_factory=lambda: ExtrasServiceConfig(frequency=0.7, mean=83, std=25),
         description="Optical claim parameters",
     )
     physiotherapy: ExtrasServiceConfig = Field(
         default_factory=lambda: ExtrasServiceConfig(
-            frequency=1.5, mean=85, std=20, age_65_multiplier=1.5
+            frequency=1.0, mean=41, std=12, age_65_multiplier=1.5
         ),
         description="Physiotherapy claim parameters",
     )
     chiropractic: ExtrasServiceConfig = Field(
-        default_factory=lambda: ExtrasServiceConfig(frequency=1.2, mean=70, std=15),
+        default_factory=lambda: ExtrasServiceConfig(frequency=0.8, mean=35, std=10),
         description="Chiropractic claim parameters",
     )
 
@@ -342,6 +464,12 @@ class ClaimsConfig(BaseModel):
     approval: ClaimApprovalConfig = Field(
         default_factory=ClaimApprovalConfig,
         description="Claim approval/denial parameters",
+    )
+
+    # Processing delays for lifecycle transitions
+    processing_delays: ClaimProcessingDelaysConfig = Field(
+        default_factory=ClaimProcessingDelaysConfig,
+        description="Delays for claim state transitions (assessment, approval, payment)",
     )
 
 
@@ -433,6 +561,103 @@ class EventRatesConfig(BaseModel):
             "Annual rate of suspensions (overseas travel, hardship). "
             "2% = ~2,000 suspensions per year per 100k policies."
         ),
+    )
+
+
+class MemberLifecycleConfig(BaseModel):
+    """
+    Member lifecycle event rates and parameters.
+
+    Controls demographic changes like address, phone, email, name,
+    marital status changes, and death.
+    """
+
+    # Annual rates for demographic changes (applied daily as rate/365)
+    address_change_rate: float = Field(
+        default=0.12,
+        ge=0,
+        le=0.5,
+        description="Annual rate of address changes (12% of members move annually)",
+    )
+    phone_change_rate: float = Field(
+        default=0.08,
+        ge=0,
+        le=0.5,
+        description="Annual rate of phone number changes",
+    )
+    email_change_rate: float = Field(
+        default=0.05,
+        ge=0,
+        le=0.5,
+        description="Annual rate of email address changes",
+    )
+    name_change_rate: float = Field(
+        default=0.015,
+        ge=0,
+        le=0.1,
+        description="Annual rate of name changes (marriage/divorce)",
+    )
+    marital_status_change_rate: float = Field(
+        default=0.02,
+        ge=0,
+        le=0.1,
+        description="Annual rate of marital status changes",
+    )
+    preferred_name_rate: float = Field(
+        default=0.01,
+        ge=0,
+        le=0.1,
+        description="Annual rate of preferred name updates",
+    )
+
+    # Medicare renewal
+    medicare_renewal_advance_days: int = Field(
+        default=30,
+        ge=0,
+        le=90,
+        description="Days before expiry to renew Medicare card",
+    )
+
+    # Death rates by age group (annual)
+    death_rates: dict[str, float] = Field(
+        default={
+            "18-30": 0.0005,
+            "31-45": 0.001,
+            "46-60": 0.003,
+            "61-70": 0.008,
+            "71-80": 0.02,
+            "81+": 0.05,
+        },
+        description="Annual death rates by age bracket",
+    )
+
+    # Correlation settings
+    name_change_triggers_marital: float = Field(
+        default=0.8,
+        ge=0,
+        le=1,
+        description="Probability that name change also triggers marital status change",
+    )
+
+    # Address move settings
+    interstate_move_rate: float = Field(
+        default=0.15,
+        ge=0,
+        le=1,
+        description="Probability that address change is interstate",
+    )
+
+    # Initial marital status distribution
+    initial_marital_status: dict[str, float] = Field(
+        default={
+            "Single": 0.35,
+            "Married": 0.40,
+            "DeFacto": 0.15,
+            "Divorced": 0.07,
+            "Separated": 0.02,
+            "Widowed": 0.01,
+        },
+        description="Initial marital status distribution for new members",
     )
 
 
@@ -545,6 +770,7 @@ class SimulationConfig(BaseSettings):
     claims: ClaimsConfig = Field(default_factory=ClaimsConfig)
     churn: ChurnModelConfig = Field(default_factory=ChurnModelConfig)
     events: EventRatesConfig = Field(default_factory=EventRatesConfig)
+    member_lifecycle: MemberLifecycleConfig = Field(default_factory=MemberLifecycleConfig)
     billing: BillingConfig = Field(default_factory=BillingConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)

@@ -4,9 +4,9 @@ Policy generator for Brickwell Health Simulator.
 Generates policies from approved applications.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from brickwell_health.domain.application import ApplicationCreate, ApplicationMemberCreate
@@ -23,13 +23,22 @@ from brickwell_health.generators.base import BaseGenerator
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.statistics.income_model import IncomeModel
 
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
+
 
 class PolicyGenerator(BaseGenerator[PolicyCreate]):
     """
     Generates policies from approved applications.
     """
 
-    def __init__(self, rng, reference, id_generator: IDGenerator):
+    def __init__(
+        self,
+        rng,
+        reference,
+        id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the policy generator.
 
@@ -37,8 +46,9 @@ class PolicyGenerator(BaseGenerator[PolicyCreate]):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
         self.income_model = IncomeModel(rng)
 
@@ -102,7 +112,7 @@ class PolicyGenerator(BaseGenerator[PolicyCreate]):
             original_join_date=application.requested_start_date,
             previous_fund_code=application.previous_fund_code,
             transfer_certificate_date=application.requested_start_date if application.transfer_certificate_received else None,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -128,7 +138,7 @@ class PolicyGenerator(BaseGenerator[PolicyCreate]):
                 effective_date=application.requested_start_date,
                 end_date=None,
                 is_active=True,
-                created_at=datetime.now(),
+                created_at=self.get_current_datetime(),
                 created_by="SIMULATION",
             )
             policy_members.append(pm)

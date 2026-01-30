@@ -12,7 +12,7 @@ from uuid import UUID
 import structlog
 
 from brickwell_health.core.processes.base import BaseProcess
-from brickwell_health.domain.enums import InvoiceStatus, PaymentMethod
+from brickwell_health.domain.enums import InvoiceStatus, PaymentMethod, PaymentStatus
 from brickwell_health.generators.billing_generator import BillingGenerator
 
 
@@ -63,7 +63,7 @@ class BillingProcess(BaseProcess):
         self.shared_state = shared_state
 
         # Initialize generator
-        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator)
+        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
 
         # Configuration
         self.max_debit_retries = self.config.billing.max_debit_retries
@@ -111,6 +111,9 @@ class BillingProcess(BaseProcess):
 
             # Check for arrears daily
             self._check_arrears(current_date)
+
+            # Process member change events (address changes affect billing address)
+            self._process_member_change_events(current_date)
 
             # Wait until next day
             yield self.env.timeout(1.0)
@@ -241,6 +244,12 @@ class BillingProcess(BaseProcess):
                 )
 
                 self.batch_writer.add("payment", payment.model_dump_db())
+
+                # Flush to commit PENDING state before updating to COMPLETED (for CDC)
+                self.batch_writer.flush_for_cdc("payment", "payment_id", payment.payment_id)
+
+                # Update payment status from PENDING to COMPLETED
+                self._update_payment_status(payment, PaymentStatus.COMPLETED)
 
                 # Record successful debit result
                 result = self.billing_gen.generate_direct_debit_result(
@@ -568,19 +577,20 @@ class BillingProcess(BaseProcess):
         """
         Update invoice status in BatchWriter buffer or database.
 
-        Uses BatchWriter.update_record() which handles the race condition between
-        buffered inserts and updates:
-        - If invoice is still in buffer: updates the buffer record
-        - If invoice already flushed to DB: executes UPDATE statement
+        Flushes buffer first if invoice is still pending to ensure INSERT
+        is committed before UPDATE (for CDC visibility).
 
         Args:
             invoice: Invoice with updated status
         """
+        # Flush if invoice is still in buffer to ensure INSERT is committed for CDC
+        self.batch_writer.flush_for_cdc("invoice", "invoice_id", invoice.invoice_id)
+
         status = invoice.invoice_status
         if hasattr(status, 'value'):
             status = status.value
 
-        # Use BatchWriter's update_record to handle buffer + DB update
+        # Use BatchWriter's update_record to update in DB
         self.batch_writer.update_record(
             table_name="invoice",
             key_field="invoice_id",
@@ -589,5 +599,76 @@ class BillingProcess(BaseProcess):
                 "invoice_status": status,
                 "paid_amount": float(invoice.paid_amount) if invoice.paid_amount else 0,
                 "balance_due": float(invoice.balance_due) if invoice.balance_due else 0,
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
             },
         )
+
+    def _update_payment_status(self, payment, new_status: PaymentStatus) -> None:
+        """
+        Update payment status in BatchWriter buffer or database.
+
+        Called after direct debit result is known to transition payment
+        from PENDING to COMPLETED (success) or FAILED (all retries exhausted).
+
+        Args:
+            payment: Payment object with payment_id
+            new_status: New PaymentStatus (COMPLETED or FAILED)
+        """
+        self.batch_writer.update_record(
+            table_name="payment",
+            key_field="payment_id",
+            key_value=payment.payment_id,
+            updates={
+                "payment_status": new_status.value,
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
+            },
+        )
+
+    def _process_member_change_events(self, current_date: date) -> None:
+        """
+        Process member change events that affect billing.
+
+        Handles:
+        - ADDRESS_CHANGE: Update billing address on bank account
+        """
+        if not self.shared_state:
+            return
+
+        # Process address changes
+        # Note: PolicyLifecycleProcess also processes these, so check if any remain
+        # for billing-specific handling (address changes for billing address updates)
+        address_events = self.shared_state.get_member_change_events("ADDRESS_CHANGE")
+        for event in address_events:
+            self._handle_address_change_for_billing(event, current_date)
+
+    def _handle_address_change_for_billing(self, event: dict, current_date: date) -> None:
+        """
+        Handle address change for billing purposes.
+
+        Updates the billing address on the bank account/direct debit mandate
+        when the primary member's address changes.
+
+        Args:
+            event: Member change event dictionary
+            current_date: Current simulation date
+        """
+        policy_id = event["policy_id"]
+        change_data = event.get("change_data", {})
+        member_role = change_data.get("member_role")
+        new_state = change_data.get("new_state")
+
+        # Only update billing address for primary member changes
+        if member_role != "Primary":
+            return
+
+        # Note: Full implementation would update the bank_account record
+        # with the new billing address. For now, we just track the event.
+        logger.debug(
+            "billing_address_change_noted",
+            policy_id=str(policy_id),
+            new_state=new_state,
+        )
+        self.increment_stat("billing_address_changes")
+

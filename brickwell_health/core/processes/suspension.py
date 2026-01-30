@@ -79,7 +79,7 @@ class SuspensionProcess(BaseProcess):
         self.active_suspensions = active_suspensions if active_suspensions is not None else {}
 
         # Initialize billing generator for refunds
-        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator)
+        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
 
     def run(self) -> Generator:
         """

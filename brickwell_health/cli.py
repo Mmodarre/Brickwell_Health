@@ -118,8 +118,13 @@ def run(ctx, workers, sequential):
     is_flag=True,
     help="Drop existing tables before creating",
 )
+@click.option(
+    "--enable-cdc",
+    is_flag=True,
+    help="Create CDC replication slot for change data capture (requires wal_level=logical)",
+)
 @click.pass_context
-def init_db(ctx, drop_existing):
+def init_db(ctx, drop_existing, enable_cdc):
     """Initialize the database schema."""
     import importlib.util
     from pathlib import Path
@@ -143,9 +148,11 @@ def init_db(ctx, drop_existing):
         init_db_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(init_db_module)
         
-        init_db_module.init_database(config_path, drop_existing)
+        init_db_module.init_database(config_path, drop_existing, enable_cdc)
 
         click.echo("Database initialized successfully.")
+        if enable_cdc:
+            click.echo("CDC replication slot created (cdc_slot).")
 
     except Exception as e:
         logger.exception("init_db_failed", error=str(e))

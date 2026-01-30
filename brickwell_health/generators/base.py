@@ -5,13 +5,18 @@ Provides common functionality for all data generators.
 """
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, Any
+from datetime import date, datetime
+from typing import Generic, TypeVar, Any, TYPE_CHECKING
+
 from uuid import UUID
 
 import numpy as np
 from numpy.random import Generator as RNG
 
 from brickwell_health.reference.loader import ReferenceDataLoader
+
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
 
 T = TypeVar("T")
 
@@ -28,16 +33,46 @@ class BaseGenerator(ABC, Generic[T]):
                 ...
     """
 
-    def __init__(self, rng: RNG, reference: ReferenceDataLoader):
+    def __init__(
+        self,
+        rng: RNG,
+        reference: ReferenceDataLoader,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the generator.
 
         Args:
             rng: NumPy random number generator
             reference: Reference data loader
+            sim_env: Simulation environment for time access (required)
+
+        Raises:
+            ValueError: If sim_env is None
         """
+        if sim_env is None:
+            raise ValueError("sim_env is required - generators must use simulation time")
         self.rng = rng
         self.reference = reference
+        self.sim_env = sim_env
+
+    def get_current_datetime(self) -> datetime:
+        """
+        Get current datetime from simulation environment.
+
+        Returns:
+            Current simulation datetime
+        """
+        return self.sim_env.current_datetime
+
+    def get_current_date(self) -> date:
+        """
+        Get current date from simulation environment.
+
+        Returns:
+            Current simulation date
+        """
+        return self.sim_env.current_date
 
     @abstractmethod
     def generate(self, **kwargs: Any) -> T:

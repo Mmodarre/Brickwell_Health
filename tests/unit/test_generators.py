@@ -7,6 +7,7 @@ from datetime import date
 import numpy as np
 import pytest
 
+from brickwell_health.core.environment import SimulationEnvironment
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.generators.member_generator import MemberGenerator
 from brickwell_health.domain.enums import Gender
@@ -90,9 +91,10 @@ class TestMemberGenerator:
         test_rng: np.random.Generator,
         test_reference,
         id_generator: IDGenerator,
+        sim_env: SimulationEnvironment,
     ):
         """Generated member should have all required fields."""
-        gen = MemberGenerator(test_rng, test_reference, id_generator)
+        gen = MemberGenerator(test_rng, test_reference, id_generator, sim_env=sim_env)
         member = gen.generate(as_of_date=date(2024, 1, 1))
 
         assert member.member_id is not None
@@ -108,9 +110,10 @@ class TestMemberGenerator:
         test_rng: np.random.Generator,
         test_reference,
         id_generator: IDGenerator,
+        sim_env: SimulationEnvironment,
     ):
         """Member should be generated with specified age."""
-        gen = MemberGenerator(test_rng, test_reference, id_generator)
+        gen = MemberGenerator(test_rng, test_reference, id_generator, sim_env=sim_env)
         member = gen.generate(age=35, as_of_date=date(2024, 1, 1))
 
         # Calculate age
@@ -123,9 +126,10 @@ class TestMemberGenerator:
         test_rng: np.random.Generator,
         test_reference,
         id_generator: IDGenerator,
+        sim_env: SimulationEnvironment,
     ):
         """Single policy type should generate one member."""
-        gen = MemberGenerator(test_rng, test_reference, id_generator)
+        gen = MemberGenerator(test_rng, test_reference, id_generator, sim_env=sim_env)
         members = gen.generate_family("Single", as_of_date=date(2024, 1, 1))
 
         assert len(members) == 1
@@ -135,9 +139,10 @@ class TestMemberGenerator:
         test_rng: np.random.Generator,
         test_reference,
         id_generator: IDGenerator,
+        sim_env: SimulationEnvironment,
     ):
         """Couple policy type should generate two members."""
-        gen = MemberGenerator(test_rng, test_reference, id_generator)
+        gen = MemberGenerator(test_rng, test_reference, id_generator, sim_env=sim_env)
         members = gen.generate_family("Couple", as_of_date=date(2024, 1, 1))
 
         assert len(members) == 2
@@ -147,9 +152,10 @@ class TestMemberGenerator:
         test_rng: np.random.Generator,
         test_reference,
         id_generator: IDGenerator,
+        sim_env: SimulationEnvironment,
     ):
         """Family policy should have primary, partner, and at least one child."""
-        gen = MemberGenerator(test_rng, test_reference, id_generator)
+        gen = MemberGenerator(test_rng, test_reference, id_generator, sim_env=sim_env)
         members = gen.generate_family("Family", as_of_date=date(2024, 1, 1))
 
         # Family should have at least 3 members (primary, partner, child)

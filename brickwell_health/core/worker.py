@@ -23,6 +23,7 @@ from brickwell_health.core.partition import PartitionManager
 from brickwell_health.core.shared_state import SharedState
 from brickwell_health.core.processes.acquisition import AcquisitionProcess
 from brickwell_health.core.processes.policy_lifecycle import PolicyLifecycleProcess
+from brickwell_health.core.processes.member_lifecycle import MemberLifecycleProcess
 from brickwell_health.core.processes.suspension import SuspensionProcess
 from brickwell_health.core.processes.claims import ClaimsProcess
 from brickwell_health.core.processes.billing import BillingProcess
@@ -96,6 +97,7 @@ class SimulationWorker:
         # Processes (created in run)
         self.acquisition: AcquisitionProcess | None = None
         self.lifecycle: PolicyLifecycleProcess | None = None
+        self.member_lifecycle: MemberLifecycleProcess | None = None
         self.suspension: SuspensionProcess | None = None
         self.claims: ClaimsProcess | None = None
         self.billing: BillingProcess | None = None
@@ -158,6 +160,7 @@ class SimulationWorker:
         # Start all processes
         self.acquisition.start()
         self.lifecycle.start()
+        self.member_lifecycle.start()
         self.suspension.start()
         self.claims.start()
         self.billing.start()
@@ -185,6 +188,7 @@ class SimulationWorker:
             "database_writes": self.batch_writer.get_all_counts(),
             "acquisition_stats": self.acquisition.get_stats() if self.acquisition else {},
             "lifecycle_stats": self.lifecycle.get_stats() if self.lifecycle else {},
+            "member_lifecycle_stats": self.member_lifecycle.get_stats() if self.member_lifecycle else {},
             "suspension_stats": self.suspension.get_stats() if self.suspension else {},
             "claims_stats": self.claims.get_stats() if self.claims else {},
             "billing_stats": self.billing.get_stats() if self.billing else {},
@@ -260,6 +264,13 @@ class SimulationWorker:
             **common_args,
             active_policies=self.shared_state.active_policies,
             suspension_process=self.suspension,
+            shared_state=self.shared_state,
+        )
+
+        # Member lifecycle handles demographic changes (address, phone, death, etc.)
+        self.member_lifecycle = MemberLifecycleProcess(
+            **common_args,
+            shared_state=self.shared_state,
         )
 
         # Claims uses policy_members and waiting_periods from shared state

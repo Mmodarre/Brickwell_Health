@@ -13,7 +13,7 @@ import structlog
 
 from brickwell_health.core.processes.base import BaseProcess
 from brickwell_health.domain.coverage import BenefitUsageCreate
-from brickwell_health.domain.enums import CoverageType, ClaimType, DenialReason
+from brickwell_health.domain.enums import CoverageType, ClaimType, ClaimStatus, DenialReason
 from brickwell_health.generators.claims_generator import ClaimsGenerator
 from brickwell_health.statistics.claim_propensity import ClaimPropensityModel
 from brickwell_health.utils.time_conversion import get_age, get_financial_year
@@ -66,9 +66,13 @@ class ClaimsProcess(BaseProcess):
         # Shared state for checking policy status
         self.shared_state = shared_state
 
+        # Reference to pending claims for lifecycle transitions
+        # Claims are INSERT'd as SUBMITTED, then UPDATE'd through lifecycle
+        self.pending_claims = shared_state.pending_claims if shared_state else {}
+
         # Initialize generators with config for APRA-based claiming patterns
         self.claims_gen = ClaimsGenerator(
-            self.rng, self.reference, self.id_generator, self.config.claims
+            self.rng, self.reference, self.id_generator, sim_env=self.sim_env, config=self.config.claims
         )
         self.propensity = ClaimPropensityModel(self.rng, self.reference, self.config.claims)
 
@@ -90,6 +94,10 @@ class ClaimsProcess(BaseProcess):
             "Massage": 13,      # MASSAGE (Remedial Massage)
             "Acupuncture": 14,  # ACUPUNCTURE
         }
+
+        # Clinical category to waiting period type mapping
+        # Used to check if a hospital claim is blocked by specialized waiting periods
+        self._clinical_category_wp_map = self.reference.get_clinical_category_wp_mapping()
 
     def _should_approve_claim(self, claim_type: ClaimType) -> tuple[bool, DenialReason | None]:
         """
@@ -180,7 +188,11 @@ class ClaimsProcess(BaseProcess):
 
             current_date = self.sim_env.current_date
 
-            # Process each member
+            # Process pending claim state transitions FIRST
+            # This handles SUBMITTED -> ASSESSED -> APPROVED/REJECTED -> PAID
+            self._process_claim_transitions(current_date)
+
+            # Process each member for new claims
             # Note: Waiting period and membership checks are handled inside _process_member_claims
             # and will generate rejected claims when appropriate
             for pm_id, member_data in list(self.policy_members.items()):
@@ -247,10 +259,21 @@ class ClaimsProcess(BaseProcess):
         hospital_rate = self.propensity.get_hospital_admission_rate(age) / 365
         if member_data.get("hospital_coverage") is not None:
             if self.rng.random() < hospital_rate:
-                # Skip silently if waiting period not complete (member knows not to claim)
-                if self._can_claim(pm_id, current_date, CoverageType.HOSPITAL):
+                # Sample clinical category FIRST (before WP check)
+                # This determines which specialized waiting period applies
+                clinical_category_id = self.propensity.sample_clinical_category(age, gender)
+
+                # Check waiting period with clinical category
+                # - General WP blocks all claims
+                # - Obstetric WP blocks pregnancy-related categories
+                # - Psychiatric WP blocks psychiatric category
+                # - Pre-existing WP probabilistically blocks general claims
+                if self._can_claim_hospital(pm_id, current_date, clinical_category_id):
                     # Stochastic approval handled in _generate_hospital_claim
-                    self._generate_hospital_claim(member_data, current_date, age, gender)
+                    self._generate_hospital_claim(
+                        member_data, current_date, age, gender,
+                        clinical_category_id=clinical_category_id,
+                    )
         else:
             # Member has no hospital coverage - may still attempt to claim (rejected)
             if self.rng.random() < hospital_rate * uncovered_attempt_rate:
@@ -287,9 +310,10 @@ class ClaimsProcess(BaseProcess):
 
         Flow:
         1. Sample service type (to determine benefit category for limit check)
-        2. Check if limits exhausted (deterministic denial)
-        3. Apply stochastic approval check
-        4. Generate approved claim with benefit capping if partial limit remaining
+        2. Check if limits exhausted (deterministic denial - immediate REJECTED)
+        3. Apply stochastic approval check (determines outcome, doesn't reject yet)
+        4. Generate claim as SUBMITTED with benefit capping
+        5. Schedule lifecycle transitions (approved or stochastic rejection)
         """
         # Step 1: Sample service type FIRST (to get benefit_category_id for pre-check)
         service_type = self.propensity.sample_extras_service_type()
@@ -303,7 +327,7 @@ class ClaimsProcess(BaseProcess):
             benefit_year,
         )
 
-        # If limit is exactly $0, deny the claim
+        # If limit is exactly $0, deny the claim IMMEDIATELY (deterministic)
         if remaining_limit is not None and remaining_limit <= Decimal("0"):
             self._generate_rejected_claim(
                 member_data, service_date, ClaimType.EXTRAS,
@@ -311,15 +335,10 @@ class ClaimsProcess(BaseProcess):
             )
             return
 
-        # Step 3: Stochastic approval check
+        # Step 3: Stochastic approval check - determines outcome but doesn't reject yet
         approved, denial_reason = self._should_approve_claim(ClaimType.EXTRAS)
-        if not approved:
-            self._generate_rejected_claim(
-                member_data, service_date, ClaimType.EXTRAS, denial_reason
-            )
-            return
 
-        # Step 4: Generate approved claim (pass service_type to avoid re-sampling)
+        # Step 4: Generate claim as SUBMITTED (both approved and stochastic rejected)
         claim, claim_line, extras_claim = self.claims_gen.generate_extras_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
@@ -356,17 +375,21 @@ class ClaimsProcess(BaseProcess):
                 extras_claim.benefit_amount = capped_benefit
                 extras_claim.annual_limit_impact = capped_benefit
 
+        # Write claim as SUBMITTED
         self.batch_writer.add("claim", claim.model_dump_db())
         self.batch_writer.add("claim_line", claim_line.model_dump())
         self.batch_writer.add("extras_claim", extras_claim.model_dump_db())
 
-        # Record benefit usage (only track the actual benefit paid, not the charge)
-        self._record_benefit_usage(
-            member_data,
-            claim,
-            extras_claim.benefit_amount,
-            claim_line.benefit_category_id,
-            service_date,
+        # Step 6: Schedule lifecycle transitions (benefit usage recorded when PAID)
+        self._schedule_claim_transitions(
+            claim=claim,
+            claim_line_ids=[claim_line.claim_line_id],
+            member_data=member_data,
+            lodgement_date=service_date,
+            approved=approved,
+            denial_reason=denial_reason if not approved else None,
+            benefit_category_id=claim_line.benefit_category_id,
+            benefit_amount=extras_claim.benefit_amount,
         )
 
         self.increment_stat("extras_claims")
@@ -377,6 +400,7 @@ class ClaimsProcess(BaseProcess):
         admission_date: date,
         age: int,
         gender: str,
+        clinical_category_id: int | None = None,
     ) -> None:
         """
         Generate a hospital admission claim with stochastic approval check.
@@ -384,17 +408,22 @@ class ClaimsProcess(BaseProcess):
         Note: Hospital claims don't have annual limits like extras, so only
         stochastic approval is checked here. Deterministic checks (membership,
         waiting period) are done in _process_member_claims.
-        """
-        # Stochastic approval check
-        approved, denial_reason = self._should_approve_claim(ClaimType.HOSPITAL)
-        if not approved:
-            self._generate_rejected_claim(
-                member_data, admission_date, ClaimType.HOSPITAL,
-                denial_reason, age=age
-            )
-            return
 
-        # Generate approved claim
+        Claim is created as SUBMITTED and transitions through lifecycle.
+
+        Args:
+            member_data: Member data dictionary
+            admission_date: Date of admission
+            age: Patient age
+            gender: Patient gender
+            clinical_category_id: Optional pre-sampled clinical category ID
+                (used when category was sampled for waiting period check)
+        """
+        # Stochastic approval check - determines outcome but doesn't reject yet
+        approved, denial_reason = self._should_approve_claim(ClaimType.HOSPITAL)
+
+        # Generate claim as SUBMITTED (both approved and stochastic rejected)
+        # Pass clinical_category_id if provided (avoids re-sampling)
         claim, claim_lines, admission, prosthesis_claims, medical_services = self.claims_gen.generate_hospital_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
@@ -402,8 +431,10 @@ class ClaimsProcess(BaseProcess):
             admission_date=admission_date,
             age=age,
             gender=gender,
+            clinical_category_id=clinical_category_id,
         )
 
+        # Write claim as SUBMITTED
         self.batch_writer.add("claim", claim.model_dump_db())
         for cl in claim_lines:
             self.batch_writer.add("claim_line", cl.model_dump())
@@ -416,6 +447,21 @@ class ClaimsProcess(BaseProcess):
         # Write medical services (MBS items billed by doctors)
         for medical_service in medical_services:
             self.batch_writer.add("medical_service", medical_service.model_dump())
+
+        # Get discharge date for lodgement (hospital claims lodge on discharge)
+        lodgement_date = admission.discharge_date or admission_date
+
+        # Schedule lifecycle transitions
+        self._schedule_claim_transitions(
+            claim=claim,
+            claim_line_ids=[cl.claim_line_id for cl in claim_lines],
+            member_data=member_data,
+            lodgement_date=lodgement_date,
+            approved=approved,
+            denial_reason=denial_reason if not approved else None,
+            benefit_category_id=None,  # Hospital claims don't track per-category usage
+            benefit_amount=None,
+        )
 
         self.increment_stat("hospital_claims")
         if prosthesis_claims:
@@ -434,16 +480,13 @@ class ClaimsProcess(BaseProcess):
         Note: Ambulance claims don't have annual limits, so only stochastic
         approval is checked here. Deterministic checks (membership, waiting
         period) are done in _process_member_claims.
-        """
-        # Stochastic approval check
-        approved, denial_reason = self._should_approve_claim(ClaimType.AMBULANCE)
-        if not approved:
-            self._generate_rejected_claim(
-                member_data, incident_date, ClaimType.AMBULANCE, denial_reason
-            )
-            return
 
-        # Generate approved claim
+        Claim is created as SUBMITTED and transitions through lifecycle.
+        """
+        # Stochastic approval check - determines outcome but doesn't reject yet
+        approved, denial_reason = self._should_approve_claim(ClaimType.AMBULANCE)
+
+        # Generate claim as SUBMITTED (both approved and stochastic rejected)
         claim, ambulance = self.claims_gen.generate_ambulance_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
@@ -451,8 +494,22 @@ class ClaimsProcess(BaseProcess):
             incident_date=incident_date,
         )
 
+        # Write claim as SUBMITTED
         self.batch_writer.add("claim", claim.model_dump_db())
         self.batch_writer.add("ambulance_claim", ambulance.model_dump())
+
+        # Ambulance claims don't have claim_lines in the traditional sense
+        # We don't track them separately, but schedule transitions for the main claim
+        self._schedule_claim_transitions(
+            claim=claim,
+            claim_line_ids=[],  # Ambulance claims have no separate claim_lines
+            member_data=member_data,
+            lodgement_date=incident_date,
+            approved=approved,
+            denial_reason=denial_reason if not approved else None,
+            benefit_category_id=None,  # Ambulance claims don't track per-category usage
+            benefit_amount=None,
+        )
 
         self.increment_stat("ambulance_claims")
 
@@ -493,6 +550,269 @@ class ClaimsProcess(BaseProcess):
             member_id=str(claim.member_id),
         )
 
+    def _schedule_claim_transitions(
+        self,
+        claim,
+        claim_line_ids: list[UUID],
+        member_data: dict,
+        lodgement_date: date,
+        approved: bool,
+        denial_reason: DenialReason | None = None,
+        benefit_category_id: int | None = None,
+        benefit_amount: Decimal | None = None,
+    ) -> None:
+        """
+        Schedule future state transitions for a claim.
+
+        Claims are INSERT'd as SUBMITTED and transition through:
+        - SUBMITTED -> ASSESSED (after assessment_days)
+        - ASSESSED -> APPROVED (if approved) or REJECTED (if stochastic denial)
+        - APPROVED -> PAID (after payment_days)
+
+        Processing times use a bimodal distribution:
+        - Auto-adjudicated claims: Lognormal with median ~0.5 days (same-day/next-day)
+        - Manual review claims: Lognormal with median ~5 days (3-14 day range)
+
+        Args:
+            claim: The claim object
+            claim_line_ids: List of claim line UUIDs for this claim
+            member_data: Member data dict
+            lodgement_date: Date claim was lodged
+            approved: True if claim will be approved, False for stochastic rejection
+            denial_reason: Denial reason for stochastic rejections
+            benefit_category_id: Benefit category for usage tracking (extras)
+            benefit_amount: Benefit amount for usage tracking (extras)
+        """
+        delays = self.config.claims.processing_delays
+        auto_adj = delays.auto_adjudication
+
+        # Determine if claim is auto-adjudicated based on claim type
+        claim_type = claim.claim_type
+        is_auto_adjudicated = self._is_auto_adjudicated(claim_type, auto_adj)
+
+        # Sample assessment delay from appropriate distribution
+        assessment_delay = self._sample_assessment_delay(is_auto_adjudicated, auto_adj)
+
+        # Approval and payment delays (uniform distribution)
+        approval_delay = self.rng.integers(
+            delays.approval_days[0], delays.approval_days[1] + 1
+        )
+        payment_delay = self.rng.integers(
+            delays.payment_days[0], delays.payment_days[1] + 1
+        )
+
+        assessment_date = lodgement_date + timedelta(days=int(assessment_delay))
+        approval_date = assessment_date + timedelta(days=int(approval_delay))
+        payment_date = approval_date + timedelta(days=int(payment_delay))
+
+        self.pending_claims[claim.claim_id] = {
+            "status": "SUBMITTED",
+            "assessment_date": assessment_date,
+            "approval_date": approval_date,
+            "payment_date": payment_date,
+            "approved": approved,
+            "denial_reason": denial_reason,
+            "claim_line_ids": claim_line_ids,
+            "benefit_category_id": benefit_category_id,
+            "benefit_amount": benefit_amount,
+            "member_data": member_data,
+            "policy_id": claim.policy_id,  # Store for benefit usage recording
+            "is_auto_adjudicated": is_auto_adjudicated,  # Track for analytics
+        }
+
+    def _is_auto_adjudicated(self, claim_type: str, auto_adj) -> bool:
+        """
+        Determine if a claim is auto-adjudicated based on claim type.
+
+        Industry benchmarks (2024-2025):
+        - Extras/Dental: 85-90% auto-adjudicated
+        - Hospital: 60-70% auto-adjudicated
+        - Ambulance: 90-95% auto-adjudicated
+
+        Args:
+            claim_type: Type of claim (Hospital, Extras, Ambulance)
+            auto_adj: AutoAdjudicationConfig
+
+        Returns:
+            True if claim should be auto-adjudicated
+        """
+        if claim_type == "Extras":
+            auto_rate = auto_adj.extras_auto_rate
+        elif claim_type == "Hospital":
+            auto_rate = auto_adj.hospital_auto_rate
+        elif claim_type == "Ambulance":
+            auto_rate = auto_adj.ambulance_auto_rate
+        else:
+            auto_rate = 0.80  # Default fallback
+
+        return self.rng.random() < auto_rate
+
+    def _sample_assessment_delay(self, is_auto_adjudicated: bool, auto_adj) -> int:
+        """
+        Sample assessment delay from lognormal distribution.
+
+        Uses bimodal distribution:
+        - Auto-adjudicated: Lognormal(mu=-0.7, sigma=0.5) → median ~0.5 days
+        - Manual review: Lognormal(mu=1.6, sigma=0.6) → median ~5 days
+
+        Args:
+            is_auto_adjudicated: Whether claim is auto-adjudicated
+            auto_adj: AutoAdjudicationConfig
+
+        Returns:
+            Number of days for assessment (integer, minimum 0)
+        """
+        import numpy as np
+
+        if is_auto_adjudicated:
+            # Auto-adjudicated: fast processing (median ~0.5 days)
+            mu = auto_adj.auto_assessment_mu
+            sigma = auto_adj.auto_assessment_sigma
+            max_days = auto_adj.max_auto_days
+        else:
+            # Manual review: slower processing (median ~5 days)
+            mu = auto_adj.manual_assessment_mu
+            sigma = auto_adj.manual_assessment_sigma
+            max_days = auto_adj.max_manual_days
+
+        # Sample from lognormal distribution
+        delay = self.rng.lognormal(mean=mu, sigma=sigma)
+
+        # Cap at maximum and convert to integer (round to nearest day)
+        delay = min(delay, max_days)
+        return max(0, int(round(delay)))
+
+    def _process_claim_transitions(self, current_date: date) -> None:
+        """
+        Process scheduled claim state transitions.
+
+        Iterates through pending claims and performs state transitions
+        when the scheduled date is reached.
+        """
+        for claim_id, data in list(self.pending_claims.items()):
+            status = data["status"]
+
+            # SUBMITTED -> ASSESSED
+            if status == "SUBMITTED" and current_date >= data["assessment_date"]:
+                # Flush if claim is still in buffer to ensure INSERT is committed for CDC
+                self.batch_writer.flush_for_cdc("claim", "claim_id", claim_id)
+
+                self._update_claim_status(
+                    claim_id,
+                    ClaimStatus.ASSESSED,
+                    assessment_date=data["assessment_date"].isoformat(),
+                )
+                data["status"] = "ASSESSED"
+                continue
+
+            # ASSESSED -> APPROVED or REJECTED
+            if status == "ASSESSED" and current_date >= data["approval_date"]:
+                if data["approved"]:
+                    self._update_claim_status(claim_id, ClaimStatus.APPROVED)
+                    data["status"] = "APPROVED"
+                else:
+                    # Stochastic rejection at approval stage
+                    self._update_claim_status(
+                        claim_id,
+                        ClaimStatus.REJECTED,
+                        rejection_reason_id=self._get_rejection_reason_id(data["denial_reason"]),
+                        rejection_notes=data["denial_reason"].value if data["denial_reason"] else None,
+                    )
+                    # Update claim lines to Rejected
+                    for line_id in data["claim_line_ids"]:
+                        # Flush if claim_line is still in buffer for CDC
+                        self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", line_id)
+                        self._update_claim_line_status(line_id, "Rejected")
+                    del self.pending_claims[claim_id]
+                    self.increment_stat("stochastic_rejections")
+                continue
+
+            # APPROVED -> PAID
+            if status == "APPROVED" and current_date >= data["payment_date"]:
+                self._update_claim_status(
+                    claim_id,
+                    ClaimStatus.PAID,
+                    payment_date=data["payment_date"].isoformat(),
+                )
+                # Update claim lines to Paid
+                for line_id in data["claim_line_ids"]:
+                    # Flush if claim_line is still in buffer for CDC
+                    self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", line_id)
+                    self._update_claim_line_status(line_id, "Paid")
+
+                # Record benefit usage NOW (when actually paid)
+                if data["benefit_amount"] and data["benefit_category_id"]:
+                    # Create a simple object with required attributes for _record_benefit_usage
+                    claim_obj = type("ClaimRef", (object,), {
+                        "claim_id": claim_id,
+                        "member_id": data["member_data"]["member"].member_id,
+                        "policy_id": data["policy_id"],
+                    })()
+                    self._record_benefit_usage(
+                        data["member_data"],
+                        claim_obj,
+                        data["benefit_amount"],
+                        data["benefit_category_id"],
+                        data["payment_date"],
+                    )
+
+                del self.pending_claims[claim_id]
+
+    def _update_claim_status(
+        self,
+        claim_id: UUID,
+        new_status: ClaimStatus,
+        **field_updates,
+    ) -> None:
+        """
+        Update claim status and optional fields in database.
+
+        Args:
+            claim_id: The claim UUID
+            new_status: New ClaimStatus value
+            **field_updates: Additional fields to update (e.g., assessment_date, payment_date)
+        """
+        updates = {
+            "claim_status": new_status.value,
+            "modified_at": self.sim_env.current_datetime.isoformat(),
+            "modified_by": "SIMULATION",
+        }
+        updates.update(field_updates)
+        self.batch_writer.update_record("claim", "claim_id", claim_id, updates)
+
+    def _update_claim_line_status(self, claim_line_id: UUID, new_status: str) -> None:
+        """
+        Update claim line status in database.
+
+        Args:
+            claim_line_id: The claim line UUID
+            new_status: New line status ("Pending", "Paid", "Rejected")
+        """
+        self.batch_writer.update_record(
+            "claim_line",
+            "claim_line_id",
+            claim_line_id,
+            {
+                "line_status": new_status,
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
+            },
+        )
+
+    def _get_rejection_reason_id(self, denial_reason: DenialReason | None) -> int | None:
+        """
+        Get rejection reason ID from denial reason enum.
+
+        Args:
+            denial_reason: DenialReason enum value or None
+
+        Returns:
+            Integer rejection reason ID or None
+        """
+        if denial_reason is None:
+            return None
+        return self.claims_gen.DENIAL_REASON_IDS.get(denial_reason, 1)
+
     def _can_claim(
         self,
         pm_id: UUID,
@@ -500,12 +820,15 @@ class ClaimsProcess(BaseProcess):
         coverage_type: CoverageType,
     ) -> bool:
         """
-        Check if member can claim based on waiting periods.
+        Check if member can claim based on waiting periods (for Extras/Ambulance).
+
+        For Hospital claims, use _can_claim_hospital instead which considers
+        clinical category-specific waiting periods.
 
         Args:
             pm_id: Policy member ID
             current_date: Current date
-            coverage_type: Type of coverage
+            coverage_type: Type of coverage (EXTRAS or AMBULANCE)
 
         Returns:
             True if member can claim
@@ -516,10 +839,69 @@ class ClaimsProcess(BaseProcess):
             if wp.get("coverage_type") != coverage_type.value:
                 continue
 
+            # Only check General waiting period for Extras/Ambulance
+            if wp.get("waiting_period_type") != "General":
+                continue
+
             # Check if waiting period is complete
             end_date = wp.get("end_date")
             if end_date and current_date < end_date:
                 return False
+
+        return True
+
+    def _can_claim_hospital(
+        self,
+        pm_id: UUID,
+        current_date: date,
+        clinical_category_id: int,
+    ) -> bool:
+        """
+        Check if member can make a hospital claim based on waiting periods.
+
+        Waiting period rules for hospital claims:
+        - General WP (2mo): Blocks ALL hospital claims
+        - Obstetric WP (12mo): Blocks pregnancy-related categories (13, 30, 31)
+        - Psychiatric WP (2mo): Blocks psychiatric category (36)
+        - Pre-existing WP (12mo): Probabilistically blocks ~15% of General claims
+          (representing claims for pre-existing conditions)
+
+        Args:
+            pm_id: Policy member ID
+            current_date: Current date
+            clinical_category_id: The clinical category for this claim
+
+        Returns:
+            True if member can claim
+        """
+        waiting_periods = self.waiting_periods.get(pm_id, [])
+
+        # Get the WP type this claim falls under based on clinical category
+        claim_wp_type = self._clinical_category_wp_map.get(clinical_category_id, "General")
+
+        for wp in waiting_periods:
+            if wp.get("coverage_type") != CoverageType.HOSPITAL.value:
+                continue
+
+            end_date = wp.get("end_date")
+            if not end_date or current_date >= end_date:
+                continue  # This waiting period has ended
+
+            wp_type = wp.get("waiting_period_type")
+
+            # General WP blocks ALL hospital claims
+            if wp_type == "General":
+                return False
+
+            # Specific WP blocks matching claim types (Obstetric or Psychiatric)
+            if wp_type == claim_wp_type:
+                return False
+
+            # Pre-existing WP: probabilistically blocks General category claims
+            # ~15% of non-specialty hospital claims are for pre-existing conditions
+            if wp_type == "Pre-existing" and claim_wp_type == "General":
+                if self.rng.random() < 0.15:
+                    return False
 
         return True
 

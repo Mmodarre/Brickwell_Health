@@ -4,9 +4,9 @@ Regulatory records generator for Brickwell Health Simulator.
 Generates LHC loading, age-based discount, and PHI rebate entitlement records.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from brickwell_health.domain.member import (
@@ -26,6 +26,9 @@ from brickwell_health.config.regulatory import (
 from brickwell_health.statistics.income_model import IncomeModel
 from brickwell_health.utils.time_conversion import get_age, get_financial_year
 
+if TYPE_CHECKING:
+    from brickwell_health.core.environment import SimulationEnvironment
+
 
 class RegulatoryGenerator(BaseGenerator):
     """
@@ -37,7 +40,13 @@ class RegulatoryGenerator(BaseGenerator):
     - PHI rebate entitlement records
     """
 
-    def __init__(self, rng, reference, id_generator: IDGenerator):
+    def __init__(
+        self,
+        rng,
+        reference,
+        id_generator: IDGenerator,
+        sim_env: "SimulationEnvironment",
+    ):
         """
         Initialize the regulatory generator.
 
@@ -45,12 +54,13 @@ class RegulatoryGenerator(BaseGenerator):
             rng: NumPy random number generator
             reference: Reference data loader
             id_generator: ID generator
+            sim_env: Simulation environment for time access
         """
-        super().__init__(rng, reference)
+        super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
         self.lhc_calc = LHCLoadingCalculator()
         self.age_discount_calc = AgeBasedDiscountCalculator()
-        self.rebate_calc = PHIRebateCalculator()
+        self.rebate_calc = PHIRebateCalculator(sim_env=sim_env)
         self.income_model = IncomeModel(rng)
 
     def generate(self, **kwargs) -> dict[str, Any]:
@@ -108,7 +118,7 @@ class RegulatoryGenerator(BaseGenerator):
             continuous_cover_start=join_date,
             years_without_cover=result["years_without_cover"],
             is_loading_active=result["loading_percentage"] > 0,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -161,7 +171,7 @@ class RegulatoryGenerator(BaseGenerator):
             phase_out_end_date=phase_out_end,
             current_discount_pct=result["current_discount"],
             is_active=result["current_discount"] > 0,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 
@@ -224,7 +234,7 @@ class RegulatoryGenerator(BaseGenerator):
             mls_liable=result["mls_liable"],
             effective_date=effective_date,
             end_date=None,
-            created_at=datetime.now(),
+            created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
 

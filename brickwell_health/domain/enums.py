@@ -236,3 +236,25 @@ class AgeBracket(str, Enum):
     UNDER_65 = "Under 65"
     AGE_65_TO_69 = "65-69"
     AGE_70_PLUS = "70+"
+
+
+class MaritalStatus(str, Enum):
+    """Marital status for members."""
+    SINGLE = "Single"
+    MARRIED = "Married"
+    DE_FACTO = "DeFacto"
+    DIVORCED = "Divorced"
+    SEPARATED = "Separated"
+    WIDOWED = "Widowed"
+
+
+class MemberChangeType(str, Enum):
+    """Type of member change event."""
+    ADDRESS_CHANGE = "AddressChange"
+    PHONE_CHANGE = "PhoneChange"
+    EMAIL_CHANGE = "EmailChange"
+    NAME_CHANGE = "NameChange"
+    MARITAL_STATUS_CHANGE = "MaritalStatusChange"
+    MEDICARE_RENEWAL = "MedicareRenewal"
+    PREFERRED_NAME_UPDATE = "PreferredNameUpdate"
+    DEATH = "Death"

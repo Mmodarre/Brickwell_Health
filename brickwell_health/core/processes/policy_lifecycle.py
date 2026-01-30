@@ -27,6 +27,7 @@ from brickwell_health.utils.time_conversion import last_of_month
 
 if TYPE_CHECKING:
     from brickwell_health.core.processes.suspension import SuspensionProcess
+    from brickwell_health.core.shared_state import SharedState
 
 
 logger = structlog.get_logger()
@@ -54,6 +55,7 @@ class PolicyLifecycleProcess(BaseProcess):
         *args: Any,
         active_policies: dict[UUID, dict] | None = None,
         suspension_process: "SuspensionProcess | None" = None,
+        shared_state: "SharedState | None" = None,
         **kwargs: Any,
     ):
         """
@@ -63,6 +65,7 @@ class PolicyLifecycleProcess(BaseProcess):
             active_policies: Dictionary of active policies to process
                             (policy_id -> policy data dict)
             suspension_process: Optional SuspensionProcess instance for delegation
+            shared_state: SharedState for cross-process communication
         """
         super().__init__(*args, **kwargs)
 
@@ -72,10 +75,13 @@ class PolicyLifecycleProcess(BaseProcess):
         # Suspension process for delegation
         self.suspension_process = suspension_process
 
+        # Shared state for member change events
+        self.shared_state = shared_state
+
         # Initialize generators
-        self.coverage_gen = CoverageGenerator(self.rng, self.reference, self.id_generator)
-        self.waiting_gen = WaitingPeriodGenerator(self.rng, self.reference, self.id_generator)
-        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator)
+        self.coverage_gen = CoverageGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.waiting_gen = WaitingPeriodGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
 
         # Initialize churn prediction model
         self.churn_model = ChurnPredictionModel(self.rng, self.reference, self.config)
@@ -138,6 +144,9 @@ class PolicyLifecycleProcess(BaseProcess):
                     self._process_cancellation(policy_id, policy, current_date)
                 elif event_type == "suspend":
                     self._process_suspension(policy_id, policy, current_date)
+
+            # Process member change events (death, address changes)
+            self._process_member_change_events(current_date)
 
             # Wait until next day
             yield self.env.timeout(1.0)
@@ -691,6 +700,208 @@ class PolicyLifecycleProcess(BaseProcess):
         """
         self.active_policies.pop(policy_id, None)
 
+    def _process_member_change_events(self, current_date) -> None:
+        """
+        Process member change events from MemberLifecycleProcess.
+
+        Handles:
+        - DEATH: Cancel policy or transfer to surviving member
+        - ADDRESS_CHANGE: Update policy address, may affect ambulance coverage
+        """
+        if not self.shared_state:
+            return
+
+        # Process death events
+        death_events = self.shared_state.get_member_change_events("DEATH")
+        for event in death_events:
+            self._handle_member_death(event, current_date)
+
+        # Process address changes (may affect ambulance coverage by state)
+        address_events = self.shared_state.get_member_change_events("ADDRESS_CHANGE")
+        for event in address_events:
+            self._handle_address_change(event, current_date)
+
+    def _handle_member_death(self, event: dict, current_date) -> None:
+        """
+        Handle policy implications of member death.
+
+        - Primary death: Cancel policy with reason "Deceased"
+        - Partner/Dependent death: Remove from policy, adjust policy type
+        """
+        policy_id = event["policy_id"]
+        member_id = event["member_id"]
+        change_data = event.get("change_data", {})
+        member_role = change_data.get("member_role", "Primary")
+
+        policy = self.active_policies.get(policy_id)
+        if not policy:
+            return
+
+        if member_role == "Primary":
+            # Primary death: Cancel the policy
+            self._cancel_for_death(policy_id, policy, current_date)
+        else:
+            # Partner or Dependent death: Remove from policy
+            self._remove_member_from_policy(policy_id, member_id, member_role, current_date)
+
+        self.increment_stat("member_deaths_processed")
+
+    def _cancel_for_death(self, policy_id: UUID, policy: dict, current_date) -> None:
+        """Cancel policy due to primary member death."""
+        # Remove from active policies
+        del self.active_policies[policy_id]
+
+        # Write SQL to update POLICY status to Cancelled with death reason
+        sql = f"""
+            UPDATE policy
+            SET policy_status = 'Cancelled',
+                end_date = '{current_date.isoformat()}',
+                cancellation_reason = 'Primary member deceased',
+                modified_at = '{self.sim_env.current_datetime.isoformat()}',
+                modified_by = 'SIMULATION'
+            WHERE policy_id = '{policy_id}'
+        """
+        self.batch_writer.add_raw_sql("policy_cancellation_death", sql)
+
+        # End all COVERAGE records
+        sql = f"""
+            UPDATE coverage
+            SET status = 'Terminated',
+                end_date = '{current_date.isoformat()}',
+                modified_at = '{self.sim_env.current_datetime.isoformat()}',
+                modified_by = 'SIMULATION'
+            WHERE policy_id = '{policy_id}'
+              AND (status = 'Active' OR status IS NULL)
+        """
+        self.batch_writer.add_raw_sql("coverage_termination_death", sql)
+
+        # End all POLICY_MEMBER records
+        sql = f"""
+            UPDATE policy_member
+            SET is_active = FALSE,
+                end_date = '{current_date.isoformat()}'
+            WHERE policy_id = '{policy_id}'
+              AND is_active = TRUE
+        """
+        self.batch_writer.add_raw_sql("policy_member_termination_death", sql)
+
+        # Remove members from shared state tracking
+        if self.shared_state:
+            self.shared_state.remove_policy_members(policy_id)
+
+        self.increment_stat("cancellations")
+        self.increment_stat("cancellation_reason_deceased")
+
+        logger.info(
+            "policy_cancelled_death",
+            policy_id=str(policy_id),
+            date=current_date.isoformat(),
+        )
+
+    def _remove_member_from_policy(
+        self,
+        policy_id: UUID,
+        member_id: UUID,
+        member_role: str,
+        current_date,
+    ) -> None:
+        """Remove a member from policy (partner/dependent death)."""
+        policy = self.active_policies.get(policy_id)
+        if not policy:
+            return
+
+        # Update POLICY_MEMBER record to inactive
+        sql = f"""
+            UPDATE policy_member
+            SET is_active = FALSE,
+                end_date = '{current_date.isoformat()}'
+            WHERE policy_id = '{policy_id}'
+              AND member_id = '{member_id}'
+              AND is_active = TRUE
+        """
+        self.batch_writer.add_raw_sql("policy_member_removal", sql)
+
+        # Potentially update policy type
+        current_type = policy.get("policy_type", "Single")
+        new_type = None
+
+        if member_role == "Partner":
+            # Partner death: Family -> Single Parent, Couple -> Single
+            if current_type == "Family":
+                new_type = "Single Parent"
+            elif current_type == "Couple":
+                new_type = "Single"
+        elif member_role == "Dependent":
+            # Dependent death: May need to check remaining dependents
+            # If no dependents left, Family -> Couple, Single Parent -> Single
+            # For simplicity, we don't track exact counts, just log it
+            pass
+
+        if new_type:
+            # Update policy type
+            sql = f"""
+                UPDATE policy
+                SET policy_type = '{new_type}',
+                    modified_at = '{self.sim_env.current_datetime.isoformat()}',
+                    modified_by = 'SIMULATION'
+                WHERE policy_id = '{policy_id}'
+            """
+            self.batch_writer.add_raw_sql("policy_type_change", sql)
+
+            policy["policy_type"] = new_type
+
+            logger.debug(
+                "policy_type_changed",
+                policy_id=str(policy_id),
+                from_type=current_type,
+                to_type=new_type,
+                reason="member_death",
+            )
+
+        # Remove from shared state tracking if available
+        if self.shared_state:
+            # Find and remove the policy_member by member_id
+            for pm_id, data in list(self.shared_state.policy_members.items()):
+                member = data.get("member")
+                if member and member.member_id == member_id:
+                    self.shared_state.remove_policy_member(pm_id)
+                    break
+
+    def _handle_address_change(self, event: dict, current_date) -> None:
+        """
+        Handle address change for a member.
+
+        Updates policy address and checks if ambulance coverage needs adjustment
+        (ambulance coverage varies by state in Australia).
+        """
+        policy_id = event["policy_id"]
+        change_data = event.get("change_data", {})
+        previous_state = change_data.get("previous_state")
+        new_state = change_data.get("new_state")
+        member_role = change_data.get("member_role")
+
+        policy = self.active_policies.get(policy_id)
+        if not policy:
+            return
+
+        # Only update policy address if primary member moved
+        if member_role != "Primary":
+            return
+
+        # Log interstate moves (may affect ambulance coverage)
+        if previous_state != new_state:
+            logger.debug(
+                "policy_interstate_move",
+                policy_id=str(policy_id),
+                from_state=previous_state,
+                to_state=new_state,
+            )
+            self.increment_stat("interstate_moves")
+
+        # Note: Full ambulance coverage adjustment would require checking state-specific
+        # ambulance schemes and updating coverage records. For now, just track the event.
+        self.increment_stat("address_changes_processed")
+
     def _log_progress(self) -> None:
         """Log lifecycle progress."""
         stats = self.get_stats()
@@ -703,4 +914,6 @@ class PolicyLifecycleProcess(BaseProcess):
             downgrades=stats.get("downgrades", 0),
             cancellations=stats.get("cancellations", 0),
             suspensions=stats.get("suspensions", 0),
+            member_deaths_processed=stats.get("member_deaths_processed", 0),
+            address_changes_processed=stats.get("address_changes_processed", 0),
         )

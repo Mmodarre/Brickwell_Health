@@ -92,7 +92,7 @@ def test_config() -> SimulationConfig:
             username="brickwell",
             password="test_password",
             pool_size=2,
-            batch_size=100,
+            batch_size=1000,  # Minimum required batch_size
         ),
         parallel=ParallelConfig(
             num_workers=2,

@@ -61,13 +61,13 @@ class AcquisitionProcess(BaseProcess):
         self.shared_state = shared_state
 
         # Initialize generators
-        self.member_gen = MemberGenerator(self.rng, self.reference, self.id_generator)
-        self.app_gen = ApplicationGenerator(self.rng, self.reference, self.id_generator)
-        self.policy_gen = PolicyGenerator(self.rng, self.reference, self.id_generator)
-        self.coverage_gen = CoverageGenerator(self.rng, self.reference, self.id_generator)
-        self.waiting_gen = WaitingPeriodGenerator(self.rng, self.reference, self.id_generator)
-        self.regulatory_gen = RegulatoryGenerator(self.rng, self.reference, self.id_generator)
-        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator)
+        self.member_gen = MemberGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.app_gen = ApplicationGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.policy_gen = PolicyGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.coverage_gen = CoverageGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.waiting_gen = WaitingPeriodGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.regulatory_gen = RegulatoryGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
+        self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
         self.product_selector = ProductSelectionModel(
             self.rng,
             self.reference,
