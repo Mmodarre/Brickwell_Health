@@ -16,7 +16,7 @@ class MemberCreate(BaseModel):
     """Model for creating a new member."""
 
     member_id: UUID
-    member_number: str = Field(..., max_length=20)
+    member_number: str = Field(..., max_length=25)
     title: Optional[str] = Field(None, max_length=10)
     first_name: str = Field(..., max_length=100)
     middle_name: Optional[str] = Field(None, max_length=100)

@@ -23,7 +23,7 @@ class PolicyCreate(BaseModel):
     """Model for creating a new policy."""
 
     policy_id: UUID
-    policy_number: str = Field(..., max_length=20)
+    policy_number: str = Field(..., max_length=25)
     application_id: Optional[UUID] = None
     product_id: int
 

@@ -71,6 +71,23 @@ class BatchWriter:
         "arrears",
         "refund",
         "premium_discount",
+        # CRM Domain (depend on policy, member, claim, invoice)
+        "interaction",
+        "service_case",
+        "complaint",
+        # Communication Domain (depend on policy, member, campaign, interaction)
+        "communication_preference",
+        "campaign",
+        "communication",
+        "campaign_response",
+        # Digital Behavior Domain (depend on member, policy)
+        "web_session",
+        "digital_event",
+        # Survey Domain (depend on member, policy, interaction)
+        "nps_survey_pending",
+        "nps_survey",
+        "csat_survey_pending",
+        "csat_survey",
     ]
 
     def __init__(self, engine: Engine, batch_size: int = 10000):

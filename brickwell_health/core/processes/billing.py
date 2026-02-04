@@ -19,6 +19,16 @@ from brickwell_health.generators.billing_generator import BillingGenerator
 logger = structlog.get_logger()
 
 
+def _get_primary_member_id(policy_data: dict) -> UUID | None:
+    """Get the primary member ID from policy data."""
+    members = policy_data.get("members", [])
+    if members:
+        for member in members:
+            if hasattr(member, "member_id"):
+                return member.member_id
+    return None
+
+
 class BillingProcess(BaseProcess):
     """
     SimPy process for billing operations.
@@ -80,6 +90,33 @@ class BillingProcess(BaseProcess):
         final_failure_rate = 1 - final_success_rate
         per_attempt_failure = final_failure_rate ** (1 / total_attempts)
         self.payment_success_rate = 1 - per_attempt_failure
+
+    def _emit_crm_event(
+        self,
+        event_type: str,
+        policy_id: UUID,
+        member_id: UUID | None,
+        **kwargs,
+    ) -> None:
+        """
+        Emit a CRM trigger event for processing by CRMProcess.
+
+        Args:
+            event_type: Type of event (payment_failed, arrears_created, policy_suspended)
+            policy_id: The policy UUID
+            member_id: Primary member UUID
+            **kwargs: Additional event data
+        """
+        if not self.shared_state:
+            return
+
+        self.shared_state.add_crm_event({
+            "event_type": event_type,
+            "policy_id": policy_id,
+            "member_id": member_id,
+            "timestamp": self.sim_env.current_datetime,
+            **kwargs,
+        })
 
     def run(self) -> Generator:
         """
@@ -322,6 +359,16 @@ class BillingProcess(BaseProcess):
 
                 self.increment_stat("payments_failed")
 
+                # Emit CRM event for payment failure
+                primary_member_id = _get_primary_member_id(policy_data)
+                self._emit_crm_event(
+                    "payment_failed",
+                    policy_id,
+                    primary_member_id,
+                    invoice_id=invoice_id,
+                    attempt_number=attempt_number,
+                )
+
         if debits_processed > 0:
             logger.debug(
                 "direct_debits_processed",
@@ -393,6 +440,16 @@ class BillingProcess(BaseProcess):
                     days_overdue=days_overdue,
                 )
 
+                # Emit CRM event for arrears creation
+                primary_member_id = _get_primary_member_id(policy_data)
+                self._emit_crm_event(
+                    "arrears_created",
+                    policy_id,
+                    primary_member_id,
+                    invoice_id=invoice_id,
+                    arrears_amount=float(arrears.arrears_amount) if arrears.arrears_amount else 0,
+                )
+
     def _suspend_policy_for_arrears(
         self,
         policy_id: UUID,
@@ -443,6 +500,15 @@ class BillingProcess(BaseProcess):
             policy_id=str(policy_id),
             days_overdue=days_overdue,
             date=current_date.isoformat(),
+        )
+
+        # Emit CRM event for policy suspension
+        primary_member_id = _get_primary_member_id(policy_data)
+        self._emit_crm_event(
+            "policy_suspended",
+            policy_id,
+            primary_member_id,
+            suspension_reason="arrears",
         )
 
     def _lapse_policy_for_arrears(
@@ -671,4 +737,7 @@ class BillingProcess(BaseProcess):
             new_state=new_state,
         )
         self.increment_stat("billing_address_changes")
+
+
+
 

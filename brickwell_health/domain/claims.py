@@ -23,7 +23,7 @@ class ClaimCreate(BaseModel):
     """Model for creating a claim header."""
 
     claim_id: UUID
-    claim_number: str = Field(..., max_length=20)
+    claim_number: str = Field(..., max_length=25)
 
     policy_id: UUID
     member_id: UUID

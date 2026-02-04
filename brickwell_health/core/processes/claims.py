@@ -620,6 +620,17 @@ class ClaimsProcess(BaseProcess):
             "is_auto_adjudicated": is_auto_adjudicated,  # Track for analytics
         }
 
+        # Emit CRM event for claim submission
+        self._emit_crm_event(
+            "claim_submitted",
+            claim.claim_id,
+            {
+                "policy_id": claim.policy_id,
+                "member_id": claim.member_id,
+                "charge_amount": float(claim.total_charge) if claim.total_charge else 0,
+            },
+        )
+
     def _is_auto_adjudicated(self, claim_type: str, auto_adj) -> bool:
         """
         Determine if a claim is auto-adjudicated based on claim type.
@@ -723,6 +734,20 @@ class ClaimsProcess(BaseProcess):
                         # Flush if claim_line is still in buffer for CDC
                         self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", line_id)
                         self._update_claim_line_status(line_id, "Rejected")
+
+                    # Emit CRM event for claim rejection
+                    member_id = data["member_data"]["member"].member_id
+                    self._emit_crm_event(
+                        "claim_rejected",
+                        claim_id,
+                        {
+                            "policy_id": data["policy_id"],
+                            "member_id": member_id,
+                            "charge_amount": float(data.get("benefit_amount", 0) or 0),
+                            "denial_reason": data["denial_reason"].value if data["denial_reason"] else None,
+                        },
+                    )
+
                     del self.pending_claims[claim_id]
                     self.increment_stat("stochastic_rejections")
                 continue
@@ -755,6 +780,18 @@ class ClaimsProcess(BaseProcess):
                         data["benefit_category_id"],
                         data["payment_date"],
                     )
+
+                # Emit CRM event for claim payment
+                member_id = data["member_data"]["member"].member_id
+                self._emit_crm_event(
+                    "claim_paid",
+                    claim_id,
+                    {
+                        "policy_id": data["policy_id"],
+                        "member_id": member_id,
+                        "charge_amount": float(data.get("benefit_amount", 0) or 0),
+                    },
+                )
 
                 del self.pending_claims[claim_id]
 
@@ -812,6 +849,32 @@ class ClaimsProcess(BaseProcess):
         if denial_reason is None:
             return None
         return self.claims_gen.DENIAL_REASON_IDS.get(denial_reason, 1)
+
+    def _emit_crm_event(
+        self,
+        event_type: str,
+        claim_id: UUID,
+        data: dict,
+    ) -> None:
+        """
+        Emit a CRM trigger event for processing by CRMProcess.
+
+        Args:
+            event_type: Type of event (claim_submitted, claim_rejected, claim_paid)
+            claim_id: The claim UUID
+            data: Additional event data
+        """
+        if not self.shared_state:
+            return
+
+        self.shared_state.add_crm_event({
+            "event_type": event_type,
+            "claim_id": claim_id,
+            "policy_id": data.get("policy_id"),
+            "member_id": data.get("member_id"),
+            "charge_amount": data.get("charge_amount", 0),
+            "timestamp": self.sim_env.current_datetime,
+        })
 
     def _can_claim(
         self,

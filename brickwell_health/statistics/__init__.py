@@ -15,6 +15,11 @@ from brickwell_health.statistics.distributions import (
 from brickwell_health.statistics.product_selection import ProductSelectionModel
 from brickwell_health.statistics.claim_propensity import ClaimPropensityModel
 from brickwell_health.statistics.income_model import IncomeModel
+from brickwell_health.statistics.survey_models import (
+    SurveyResponsePredictor,
+    CRMStatisticalModels,
+)
+from brickwell_health.statistics.llm_context import LLMContextBuilder
 
 __all__ = [
     "ABSDemographics",
@@ -26,4 +31,8 @@ __all__ = [
     "ProductSelectionModel",
     "ClaimPropensityModel",
     "IncomeModel",
+    # Survey Models
+    "SurveyResponsePredictor",
+    "CRMStatisticalModels",
+    "LLMContextBuilder",
 ]

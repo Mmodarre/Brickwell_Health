@@ -745,7 +745,7 @@ class ParallelConfig(BaseModel):
     num_workers: int = Field(
         default=4,
         ge=1,
-        le=32,
+        le=120,
         description="Number of parallel worker processes",
     )
     checkpoint_interval_minutes: int = Field(
@@ -753,6 +753,81 @@ class ParallelConfig(BaseModel):
         ge=1,
         description="Minutes between checkpoint saves",
     )
+
+
+class CRMConfig(BaseModel):
+    """CRM domain configuration for interactions, cases, and complaints."""
+
+    interaction: dict = Field(default_factory=dict, description="Interaction settings")
+    case: dict = Field(default_factory=dict, description="Case management settings")
+    complaint: dict = Field(default_factory=dict, description="Complaint handling settings")
+
+
+class CommunicationConfig(BaseModel):
+    """Communication channel configuration."""
+
+    transactional: dict = Field(default_factory=dict, description="Transactional communication settings")
+    marketing: dict = Field(default_factory=dict, description="Marketing communication settings")
+    sms: dict = Field(default_factory=dict, description="SMS communication settings")
+    fatigue: dict = Field(default_factory=dict, description="Communication fatigue rules")
+
+
+class CampaignConfig(BaseModel):
+    """Campaign management configuration."""
+
+    campaigns_per_year: int = Field(default=6, description="Number of campaigns per year")
+    type_distribution: dict = Field(default_factory=dict, description="Campaign type distribution")
+    response_rates: dict = Field(default_factory=dict, description="Response rates by campaign type")
+
+
+class DigitalConfig(BaseModel):
+    """Digital behavior and engagement configuration."""
+
+    sessions_per_month: dict = Field(default_factory=dict, description="Sessions per month by engagement level")
+    engagement_distribution: dict = Field(default_factory=dict, description="Engagement level distribution")
+    duration_mu: float = Field(default=5.99, description="Log-normal mu for session duration")
+    duration_sigma: float = Field(default=0.50, description="Log-normal sigma for session duration")
+    pages_per_session_mean: float = Field(default=4.53, description="Mean pages per session")
+    pages_per_session_dispersion: float = Field(default=2.5, description="Dispersion for pages per session")
+    device_distribution: dict = Field(default_factory=dict, description="Device distribution")
+    page_category_distribution: dict = Field(default_factory=dict, description="Page category distribution")
+    authenticated_rate: float = Field(default=0.70, description="Rate of authenticated sessions")
+
+
+class SurveyConfig(BaseModel):
+    """Survey configuration for NPS and CSAT."""
+
+    nps: dict = Field(default_factory=dict, description="NPS survey configuration")
+    csat: dict = Field(default_factory=dict, description="CSAT survey configuration")
+
+
+class LLMConfig(BaseModel):
+    """LLM configuration for AI-generated survey responses and text."""
+
+    model: str = Field(default="databricks-qwen3-next-80b-a3b-instruct", description="LLM model identifier")
+    max_claims_history: int = Field(default=5, description="Maximum claims to include in context")
+    max_interaction_history: int = Field(default=3, description="Maximum interactions to include in context")
+    claims_history_months: int = Field(default=12, description="Months of claims history")
+    interaction_history_months: int = Field(default=6, description="Months of interaction history")
+    max_prior_nps_surveys: int = Field(default=3, description="Maximum prior NPS surveys in context")
+    max_prior_complaints: int = Field(default=2, description="Maximum prior complaints in context")
+    feedback_summary_length: int = Field(default=200, description="Maximum feedback summary length")
+    enforce_score_consistency: bool = Field(default=True, description="Enforce score consistency validation")
+    max_driver_nps_deviation: int = Field(default=3, description="Maximum NPS deviation from drivers")
+    prompts: dict = Field(default_factory=dict, description="LLM prompt templates")
+
+
+class EventTriggersConfig(BaseModel):
+    """Event trigger probabilities for NBA/NPS actions."""
+
+    claim_submitted: dict = Field(default_factory=dict, description="Triggers on claim submission")
+    claim_rejected: dict = Field(default_factory=dict, description="Triggers on claim rejection")
+    claim_delayed: dict = Field(default_factory=dict, description="Triggers on claim delay")
+    claim_paid: dict = Field(default_factory=dict, description="Triggers on claim payment")
+    payment_failed: dict = Field(default_factory=dict, description="Triggers on payment failure")
+    arrears_created: dict = Field(default_factory=dict, description="Triggers on arrears creation")
+    policy_suspended: dict = Field(default_factory=dict, description="Triggers on policy suspension")
+    interaction_completed: dict = Field(default_factory=dict, description="Triggers on interaction completion")
 
 
 class SimulationConfig(BaseSettings):
@@ -774,6 +849,15 @@ class SimulationConfig(BaseSettings):
     billing: BillingConfig = Field(default_factory=BillingConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
+
+    # NBA/NPS domain configurations
+    crm: CRMConfig = Field(default_factory=CRMConfig)
+    communication: CommunicationConfig = Field(default_factory=CommunicationConfig)
+    campaign: CampaignConfig = Field(default_factory=CampaignConfig)
+    digital: DigitalConfig = Field(default_factory=DigitalConfig)
+    survey: SurveyConfig = Field(default_factory=SurveyConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    event_triggers: EventTriggersConfig = Field(default_factory=EventTriggersConfig)
 
     reference_data_path: Path = Field(
         default=Path("data/reference"),

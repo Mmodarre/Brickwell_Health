@@ -47,6 +47,15 @@ class IDGenerator:
         self._payment_counter = 0
         self._refund_counter = 0
         self._mandate_counter = 0
+        
+        # NBA/NPS domain counters
+        self._interaction_counter = 0
+        self._case_counter = 0
+        self._complaint_counter = 0
+        self._communication_counter = 0
+        self._campaign_counter = 0
+        self._nps_survey_counter = 0
+        self._csat_survey_counter = 0
 
     def generate_uuid(self) -> UUID:
         """
@@ -159,6 +168,98 @@ class IDGenerator:
         self._mandate_counter += 1
         return f"DDR-W{self.worker_id}-{self.prefix_year}-{self._mandate_counter:06d}"
 
+    # =========================================================================
+    # NBA/NPS Domain ID Methods
+    # =========================================================================
+
+    def generate_interaction_reference(self) -> str:
+        """
+        Generate a unique interaction reference.
+
+        Format: INT-WN-YYYY-NNNNNN
+
+        Returns:
+            Interaction reference string
+        """
+        self._interaction_counter += 1
+        return f"INT-W{self.worker_id}-{self.prefix_year}-{self._interaction_counter:06d}"
+
+    def generate_case_number(self) -> str:
+        """
+        Generate a unique case number.
+
+        Format: CASE-WN-YYYY-NNNNNN
+
+        Returns:
+            Case number string
+        """
+        self._case_counter += 1
+        return f"CASE-W{self.worker_id}-{self.prefix_year}-{self._case_counter:06d}"
+
+    def generate_complaint_number(self) -> str:
+        """
+        Generate a unique complaint number.
+
+        Format: COMP-WN-YYYY-NNNNNN
+
+        Returns:
+            Complaint number string
+        """
+        self._complaint_counter += 1
+        return f"COMP-W{self.worker_id}-{self.prefix_year}-{self._complaint_counter:06d}"
+
+    def generate_communication_reference(self) -> str:
+        """
+        Generate a unique communication reference.
+
+        Format: COMM-WN-YYYY-NNNNNN
+
+        Returns:
+            Communication reference string
+        """
+        self._communication_counter += 1
+        return f"COMM-W{self.worker_id}-{self.prefix_year}-{self._communication_counter:06d}"
+
+    def generate_campaign_code(self, campaign_type: str = "GEN") -> str:
+        """
+        Generate a unique campaign code.
+
+        Format: {TYPE}-WN-YYYY-NNN
+
+        Args:
+            campaign_type: Campaign type (e.g., "RET", "UPS", "ENG")
+
+        Returns:
+            Campaign code string
+        """
+        self._campaign_counter += 1
+        type_prefix = campaign_type[:3].upper()
+        return f"{type_prefix}-W{self.worker_id}-{self.prefix_year}-{self._campaign_counter:03d}"
+
+    def generate_nps_survey_reference(self) -> str:
+        """
+        Generate a unique NPS survey reference.
+
+        Format: NPS-WN-YYYY-NNNNNN
+
+        Returns:
+            NPS survey reference string
+        """
+        self._nps_survey_counter += 1
+        return f"NPS-W{self.worker_id}-{self.prefix_year}-{self._nps_survey_counter:06d}"
+
+    def generate_csat_survey_reference(self) -> str:
+        """
+        Generate a unique CSAT survey reference.
+
+        Format: CSAT-WN-YYYY-NNNNNN
+
+        Returns:
+            CSAT survey reference string
+        """
+        self._csat_survey_counter += 1
+        return f"CSAT-W{self.worker_id}-{self.prefix_year}-{self._csat_survey_counter:06d}"
+
     def generate_medicare_number(self) -> str:
         """
         Generate a valid-format Medicare number.
@@ -220,6 +321,13 @@ class IDGenerator:
         payment: int = 0,
         refund: int = 0,
         mandate: int = 0,
+        interaction: int = 0,
+        case: int = 0,
+        complaint: int = 0,
+        communication: int = 0,
+        campaign: int = 0,
+        nps_survey: int = 0,
+        csat_survey: int = 0,
     ) -> None:
         """
         Set counter values (for checkpoint recovery).
@@ -233,6 +341,13 @@ class IDGenerator:
             payment: Payment counter value
             refund: Refund counter value
             mandate: Mandate counter value
+            interaction: Interaction counter value
+            case: Case counter value
+            complaint: Complaint counter value
+            communication: Communication counter value
+            campaign: Campaign counter value
+            nps_survey: NPS survey counter value
+            csat_survey: CSAT survey counter value
         """
         self._member_counter = member
         self._policy_counter = policy
@@ -242,6 +357,13 @@ class IDGenerator:
         self._payment_counter = payment
         self._refund_counter = refund
         self._mandate_counter = mandate
+        self._interaction_counter = interaction
+        self._case_counter = case
+        self._complaint_counter = complaint
+        self._communication_counter = communication
+        self._campaign_counter = campaign
+        self._nps_survey_counter = nps_survey
+        self._csat_survey_counter = csat_survey
 
     def get_counters(self) -> dict[str, int]:
         """
@@ -259,4 +381,11 @@ class IDGenerator:
             "payment": self._payment_counter,
             "refund": self._refund_counter,
             "mandate": self._mandate_counter,
+            "interaction": self._interaction_counter,
+            "case": self._case_counter,
+            "complaint": self._complaint_counter,
+            "communication": self._communication_counter,
+            "campaign": self._campaign_counter,
+            "nps_survey": self._nps_survey_counter,
+            "csat_survey": self._csat_survey_counter,
         }

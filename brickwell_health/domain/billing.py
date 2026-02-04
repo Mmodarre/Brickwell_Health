@@ -20,7 +20,7 @@ class InvoiceCreate(BaseModel):
     """Model for creating an invoice."""
 
     invoice_id: UUID
-    invoice_number: str = Field(..., max_length=20)
+    invoice_number: str = Field(..., max_length=25)
 
     policy_id: UUID
 
@@ -69,7 +69,7 @@ class PaymentCreate(BaseModel):
     """Model for creating a payment record."""
 
     payment_id: UUID
-    payment_number: str = Field(..., max_length=20)
+    payment_number: str = Field(..., max_length=25)
 
     policy_id: UUID
     invoice_id: Optional[UUID] = None

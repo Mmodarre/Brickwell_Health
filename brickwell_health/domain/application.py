@@ -24,7 +24,7 @@ class ApplicationCreate(BaseModel):
     """Model for creating a new application."""
 
     application_id: UUID
-    application_number: str = Field(..., max_length=20)
+    application_number: str = Field(..., max_length=25)
     application_type: ApplicationType = ApplicationType.NEW
     application_status: ApplicationStatus = ApplicationStatus.PENDING
     product_id: int

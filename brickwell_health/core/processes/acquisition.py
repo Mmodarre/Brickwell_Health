@@ -23,6 +23,7 @@ from brickwell_health.generators.coverage_generator import CoverageGenerator
 from brickwell_health.generators.waiting_period_generator import WaitingPeriodGenerator
 from brickwell_health.generators.regulatory_generator import RegulatoryGenerator
 from brickwell_health.generators.billing_generator import BillingGenerator
+from brickwell_health.generators.communication_generator import CommunicationPreferenceGenerator
 from brickwell_health.statistics.product_selection import ProductSelectionModel
 
 if TYPE_CHECKING:
@@ -72,6 +73,12 @@ class AcquisitionProcess(BaseProcess):
             self.rng,
             self.reference,
             self.config.policy.tier_distribution,
+        )
+        self.preference_gen = CommunicationPreferenceGenerator(
+            self.rng,
+            self.reference,
+            self.id_generator,
+            self.sim_env,
         )
 
         # Statistics
@@ -406,6 +413,30 @@ class AcquisitionProcess(BaseProcess):
                     ],
                 )
 
+                # Generate and write communication preferences for each member
+                preferences = self.preference_gen.generate_default_preferences(
+                    member_id=member.member_id,
+                    policy_id=policy.policy_id,
+                )
+                for pref in preferences:
+                    self.batch_writer.add("communication_preference", pref.model_dump_db())
+
+                # Cache preferences in shared state for runtime lookups
+                pref_cache = {}
+                for pref in preferences:
+                    pref_type_str = (
+                        pref.preference_type.value
+                        if hasattr(pref.preference_type, "value")
+                        else str(pref.preference_type)
+                    )
+                    key = f"{pref_type_str.lower()}_{pref.channel.lower()}"
+                    pref_cache[key] = pref.is_opted_in
+                self.shared_state.set_communication_preferences(member.member_id, pref_cache)
+
+                # Assign digital engagement level for member
+                engagement_level = self._sample_engagement_level()
+                self.shared_state.set_engagement_level(member.member_id, engagement_level)
+
         yield self.env.timeout(0)  # Allow SimPy to process
 
     def _get_product_tier(self, product_id: int) -> str:
@@ -431,6 +462,18 @@ class AcquisitionProcess(BaseProcess):
         weights = list(self.config.policy.type_distribution.values())
         type_name = self.rng.choice(types, p=[w / sum(weights) for w in weights])
         return PolicyType(type_name)
+
+    def _sample_engagement_level(self) -> str:
+        """Sample digital engagement level from config distribution."""
+        digital_config = getattr(self.config, "digital", None)
+        if digital_config and hasattr(digital_config, "engagement_distribution"):
+            distribution = digital_config.engagement_distribution
+        else:
+            distribution = {"high": 0.15, "medium": 0.35, "low": 0.50}
+
+        levels = list(distribution.keys())
+        probs = list(distribution.values())
+        return self.rng.choice(levels, p=probs)
 
     def _get_decision_time(self, channel: DistributionChannel) -> float:
         """Get decision time in days for a channel."""

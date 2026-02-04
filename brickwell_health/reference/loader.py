@@ -539,3 +539,110 @@ class ReferenceDataLoader:
                 }
 
         return result
+
+    # =========================================================================
+    # CRM/Interaction Methods
+    # =========================================================================
+
+    def get_interaction_types(self) -> list[dict[str, Any]]:
+        """Get all interaction types."""
+        return self.load("interaction_type.json")
+
+    def get_interaction_type_by_code(self, code: str) -> dict[str, Any] | None:
+        """Get an interaction type by code."""
+        types = self.get_interaction_types()
+        return next((t for t in types if t.get("type_code") == code), None)
+
+    def get_interaction_outcomes(self) -> list[dict[str, Any]]:
+        """Get all interaction outcomes."""
+        return self.load("interaction_outcome.json")
+
+    def get_case_types(self) -> list[dict[str, Any]]:
+        """Get all case types."""
+        return self.load("case_type.json")
+
+    def get_case_type_by_code(self, code: str) -> dict[str, Any] | None:
+        """Get a case type by code."""
+        types = self.get_case_types()
+        return next((t for t in types if t.get("type_code") == code), None)
+
+    def get_complaint_categories(self) -> list[dict[str, Any]]:
+        """Get all complaint categories."""
+        return self.load("complaint_category.json")
+
+    # =========================================================================
+    # Communication Methods
+    # =========================================================================
+
+    def get_communication_templates(self) -> list[dict[str, Any]]:
+        """Get all communication templates."""
+        try:
+            return self.load("communication_template.json")
+        except FileNotFoundError:
+            logger.warning("communication_template.json not found, returning empty list")
+            return []
+
+    def get_communication_template_by_trigger(self, trigger: str) -> dict[str, Any] | None:
+        """
+        Get a communication template by trigger event.
+
+        Args:
+            trigger: Trigger event type (e.g., "ClaimPaid", "InvoiceIssued")
+
+        Returns:
+            Template dict or None
+        """
+        templates = self.get_communication_templates()
+        return next((t for t in templates if t.get("trigger_event") == trigger), None)
+
+    def get_communication_template_by_code(self, code: str) -> dict[str, Any] | None:
+        """Get a communication template by code."""
+        templates = self.get_communication_templates()
+        return next((t for t in templates if t.get("template_code") == code), None)
+
+    # =========================================================================
+    # Campaign Methods
+    # =========================================================================
+
+    def get_campaign_types(self) -> list[dict[str, Any]]:
+        """Get all campaign types."""
+        try:
+            return self.load("campaign_type.json")
+        except FileNotFoundError:
+            logger.warning("campaign_type.json not found, returning empty list")
+            return []
+
+    def get_campaign_type_by_code(self, code: str) -> dict[str, Any] | None:
+        """Get a campaign type by code."""
+        types = self.get_campaign_types()
+        return next((t for t in types if t.get("type_code") == code), None)
+
+    # =========================================================================
+    # Survey Methods
+    # =========================================================================
+
+    def get_survey_types(self) -> list[dict[str, Any]]:
+        """Get all survey types."""
+        try:
+            return self.load("survey_type.json")
+        except FileNotFoundError:
+            logger.warning("survey_type.json not found, returning empty list")
+            return []
+
+    def get_survey_type_by_code(self, code: str) -> dict[str, Any] | None:
+        """Get a survey type by code."""
+        types = self.get_survey_types()
+        return next((t for t in types if t.get("type_code") == code), None)
+
+    def get_survey_type_by_trigger(self, trigger: str) -> dict[str, Any] | None:
+        """
+        Get a survey type by trigger event.
+
+        Args:
+            trigger: Trigger event type (e.g., "ClaimPaid", "InteractionCompleted")
+
+        Returns:
+            Survey type dict or None
+        """
+        types = self.get_survey_types()
+        return next((t for t in types if t.get("trigger_event") == trigger), None)

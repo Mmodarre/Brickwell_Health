@@ -26,6 +26,27 @@ from brickwell_health.domain.enums import (
     Gender,
     MaritalStatus,
     MemberChangeType,
+    # Communication Domain Enums
+    CommunicationType,
+    CommunicationDeliveryStatus,
+    PreferenceType,
+    CampaignType,
+    CampaignStatus,
+    CampaignResponseType,
+    ConversionType,
+    # Digital Behavior Domain Enums
+    DeviceType,
+    SessionType,
+    DigitalEventType,
+    PageCategory,
+    TriggerEventType,
+    # Survey Domain Enums
+    SurveyType,
+    NPSCategory,
+    CSATLabel,
+    SentimentLabel,
+    SurveyChannel,
+    ProcessingStatus,
 )
 from brickwell_health.domain.member import MemberCreate, Member, MemberUpdate
 from brickwell_health.domain.policy import PolicyCreate, Policy, PolicyMemberCreate
@@ -49,6 +70,40 @@ from brickwell_health.domain.billing import (
     PaymentCreate,
     DirectDebitMandateCreate,
     DirectDebitResultCreate,
+)
+from brickwell_health.domain.crm import (
+    InteractionCreate,
+    Interaction,
+    CaseCreate,
+    Case,
+    ComplaintCreate,
+    Complaint,
+)
+from brickwell_health.domain.communication import (
+    CommunicationPreferenceCreate,
+    CommunicationPreference,
+    CampaignCreate,
+    Campaign,
+    CommunicationCreate,
+    Communication,
+    CampaignResponseCreate,
+    CampaignResponse,
+)
+from brickwell_health.domain.digital import (
+    WebSessionCreate,
+    WebSession,
+    DigitalEventCreate,
+    DigitalEvent,
+)
+from brickwell_health.domain.survey import (
+    NPSSurveyPendingCreate,
+    NPSSurveyPending,
+    NPSSurveyCreate,
+    NPSSurvey,
+    CSATSurveyPendingCreate,
+    CSATSurveyPending,
+    CSATSurveyCreate,
+    CSATSurvey,
 )
 
 __all__ = [
@@ -74,6 +129,20 @@ __all__ = [
     "Gender",
     "MaritalStatus",
     "MemberChangeType",
+    # Communication Domain Enums
+    "CommunicationType",
+    "CommunicationDeliveryStatus",
+    "PreferenceType",
+    "CampaignType",
+    "CampaignStatus",
+    "CampaignResponseType",
+    "ConversionType",
+    # Digital Behavior Domain Enums
+    "DeviceType",
+    "SessionType",
+    "DigitalEventType",
+    "PageCategory",
+    "TriggerEventType",
     # Member
     "MemberCreate",
     "Member",
@@ -103,4 +172,41 @@ __all__ = [
     "PaymentCreate",
     "DirectDebitMandateCreate",
     "DirectDebitResultCreate",
+    # CRM
+    "InteractionCreate",
+    "Interaction",
+    "CaseCreate",
+    "Case",
+    "ComplaintCreate",
+    "Complaint",
+    # Communication
+    "CommunicationPreferenceCreate",
+    "CommunicationPreference",
+    "CampaignCreate",
+    "Campaign",
+    "CommunicationCreate",
+    "Communication",
+    "CampaignResponseCreate",
+    "CampaignResponse",
+    # Digital Behavior
+    "WebSessionCreate",
+    "WebSession",
+    "DigitalEventCreate",
+    "DigitalEvent",
+    # Survey Domain Enums
+    "SurveyType",
+    "NPSCategory",
+    "CSATLabel",
+    "SentimentLabel",
+    "SurveyChannel",
+    "ProcessingStatus",
+    # Survey Domain Models
+    "NPSSurveyPendingCreate",
+    "NPSSurveyPending",
+    "NPSSurveyCreate",
+    "NPSSurvey",
+    "CSATSurveyPendingCreate",
+    "CSATSurveyPending",
+    "CSATSurveyCreate",
+    "CSATSurvey",
 ]

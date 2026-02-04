@@ -46,8 +46,11 @@ def create_engine_for_worker(config: DatabaseConfig, worker_id: int) -> Engine:
         connection_string,
         pool_size=config.pool_size,
         pool_pre_ping=True,
-        # Label connections for debugging
-        connect_args={"application_name": f"brickwell_worker_{worker_id}"},
+        # Label connections for debugging + WAL optimization
+        connect_args={
+            "application_name": f"brickwell_worker_{worker_id}",
+            "options": "-c synchronous_commit=off",  # WAL performance: async commit
+        },
     )
 
     return engine

@@ -27,6 +27,10 @@ from brickwell_health.core.processes.member_lifecycle import MemberLifecycleProc
 from brickwell_health.core.processes.suspension import SuspensionProcess
 from brickwell_health.core.processes.claims import ClaimsProcess
 from brickwell_health.core.processes.billing import BillingProcess
+from brickwell_health.core.processes.crm import CRMProcess
+from brickwell_health.core.processes.communication import CommunicationProcess
+from brickwell_health.core.processes.digital import DigitalBehaviorProcess
+from brickwell_health.core.processes.survey import SurveyProcess
 from brickwell_health.db.connection import create_engine_for_worker
 from brickwell_health.db.writer import BatchWriter
 from brickwell_health.generators.id_generator import IDGenerator
@@ -101,6 +105,10 @@ class SimulationWorker:
         self.suspension: SuspensionProcess | None = None
         self.claims: ClaimsProcess | None = None
         self.billing: BillingProcess | None = None
+        self.crm: CRMProcess | None = None
+        self.communication: CommunicationProcess | None = None
+        self.digital: DigitalBehaviorProcess | None = None
+        self.survey: SurveyProcess | None = None
 
         # Checkpoint manager for crash recovery
         checkpoint_dir = Path(config.reference_data_path).parent / "checkpoints"
@@ -165,6 +173,22 @@ class SimulationWorker:
         self.claims.start()
         self.billing.start()
 
+        # Start CRM process if enabled
+        if self.crm:
+            self.crm.start()
+
+        # Start Communication process if enabled
+        if self.communication:
+            self.communication.start()
+
+        # Start Digital behavior process if enabled
+        if self.digital:
+            self.digital.start()
+
+        # Start Survey process if enabled
+        if self.survey:
+            self.survey.start()
+
         # Start checkpoint process
         self.sim_env.process(self._checkpoint_process())
 
@@ -192,6 +216,10 @@ class SimulationWorker:
             "suspension_stats": self.suspension.get_stats() if self.suspension else {},
             "claims_stats": self.claims.get_stats() if self.claims else {},
             "billing_stats": self.billing.get_stats() if self.billing else {},
+            "crm_stats": self.crm.get_stats() if self.crm else {},
+            "communication_stats": self.communication.get_stats() if self.communication else {},
+            "digital_stats": self.digital.get_stats() if self.digital else {},
+            "survey_stats": self.survey.get_stats() if self.survey else {},
             "shared_state": self.shared_state.get_stats() if self.shared_state else {},
         }
 
@@ -289,6 +317,42 @@ class SimulationWorker:
             pending_invoices=self.shared_state.pending_invoices,
             shared_state=self.shared_state,
         )
+
+        # CRM process for interactions, cases, and complaints (conditionally enabled)
+        crm_config = getattr(self.config, "crm", None)
+        crm_enabled = crm_config.enabled if crm_config and hasattr(crm_config, "enabled") else True
+        if crm_enabled:
+            self.crm = CRMProcess(
+                **common_args,
+                shared_state=self.shared_state,
+            )
+
+        # Communication process for transactional/marketing communications (conditionally enabled)
+        comm_config = getattr(self.config, "communication", None)
+        comm_enabled = comm_config.enabled if comm_config and hasattr(comm_config, "enabled") else True
+        if comm_enabled:
+            self.communication = CommunicationProcess(
+                **common_args,
+                shared_state=self.shared_state,
+            )
+
+        # Digital behavior process for web sessions and events (conditionally enabled)
+        digital_config = getattr(self.config, "digital", None)
+        digital_enabled = digital_config.enabled if digital_config and hasattr(digital_config, "enabled") else True
+        if digital_enabled:
+            self.digital = DigitalBehaviorProcess(
+                **common_args,
+                shared_state=self.shared_state,
+            )
+
+        # Survey process for NPS/CSAT surveys (conditionally enabled)
+        survey_config = getattr(self.config, "survey", None)
+        survey_enabled = survey_config.enabled if survey_config and hasattr(survey_config, "enabled") else True
+        if survey_enabled:
+            self.survey = SurveyProcess(
+                **common_args,
+                shared_state=self.shared_state,
+            )
 
 
 def run_worker(

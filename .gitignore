@@ -11,3 +11,7 @@ poison.py
 docs/
 .cursor/
 .pytest_cache/
+CLAUDE.md
+databricks.config
+Azure/deploy-brickwell.sh
+Azure/DEPLOYMENT_INFO.md

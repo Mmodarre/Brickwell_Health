@@ -258,3 +258,265 @@ class MemberChangeType(str, Enum):
     MEDICARE_RENEWAL = "MedicareRenewal"
     PREFERRED_NAME_UPDATE = "PreferredNameUpdate"
     DEATH = "Death"
+
+
+# ============================================================================
+# CRM DOMAIN ENUMS
+# ============================================================================
+
+class InteractionChannel(str, Enum):
+    """Channel through which member interacts with insurer."""
+    PHONE = "Phone"
+    EMAIL = "Email"
+    CHAT = "Chat"
+    BRANCH = "Branch"
+    IN_APP = "InApp"
+
+
+class InteractionDirection(str, Enum):
+    """Direction of the interaction."""
+    INBOUND = "Inbound"
+    OUTBOUND = "Outbound"
+
+
+class CasePriority(str, Enum):
+    """Priority level for service cases."""
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class CaseStatus(str, Enum):
+    """Status of a service case."""
+    OPEN = "Open"
+    IN_PROGRESS = "InProgress"
+    PENDING_MEMBER = "PendingMember"
+    PENDING_PROVIDER = "PendingProvider"
+    RESOLVED = "Resolved"
+    CLOSED = "Closed"
+
+
+class ComplaintSeverity(str, Enum):
+    """Severity level for complaints."""
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class ComplaintStatus(str, Enum):
+    """Status of a complaint."""
+    RECEIVED = "Received"
+    ACKNOWLEDGED = "Acknowledged"
+    INVESTIGATING = "Investigating"
+    RESOLVED = "Resolved"
+    ESCALATED = "Escalated"
+    CLOSED = "Closed"
+
+
+class ComplaintSource(str, Enum):
+    """Source of the complaint."""
+    PHONE = "Phone"
+    EMAIL = "Email"
+    LETTER = "Letter"
+    PHIO = "PHIO"
+    SOCIAL = "Social"
+    IN_APP = "InApp"
+
+
+class ComplaintResolutionOutcome(str, Enum):
+    """Outcome of complaint resolution."""
+    UPHELD = "Upheld"
+    NOT_UPHELD = "NotUpheld"
+    PARTIALLY_UPHELD = "PartiallyUpheld"
+    WITHDRAWN = "Withdrawn"
+
+
+# ============================================================================
+# COMMUNICATION DOMAIN ENUMS
+# ============================================================================
+
+class CommunicationType(str, Enum):
+    """Type/channel of outbound communication."""
+    LETTER = "Letter"
+    EMAIL = "Email"
+    SMS = "SMS"
+    PUSH = "Push"
+    IN_APP = "InApp"
+
+
+class CommunicationDeliveryStatus(str, Enum):
+    """Delivery status of a communication."""
+    PENDING = "Pending"
+    SENT = "Sent"
+    DELIVERED = "Delivered"
+    FAILED = "Failed"
+    BOUNCED = "Bounced"
+
+
+class PreferenceType(str, Enum):
+    """Type of communication preference."""
+    TRANSACTIONAL = "Transactional"
+    MARKETING = "Marketing"
+    CLAIMS = "Claims"
+
+
+class CampaignType(str, Enum):
+    """Type of marketing campaign."""
+    RETENTION = "Retention"
+    ACQUISITION = "Acquisition"
+    CROSS_SELL = "CrossSell"
+    UPSELL = "Upsell"
+    WINBACK = "Winback"
+    ENGAGEMENT = "Engagement"
+
+
+class CampaignStatus(str, Enum):
+    """Status of a campaign."""
+    DRAFT = "Draft"
+    ACTIVE = "Active"
+    PAUSED = "Paused"
+    COMPLETED = "Completed"
+    CANCELLED = "Cancelled"
+
+
+class CampaignResponseType(str, Enum):
+    """Type of response to a campaign."""
+    OPENED = "Opened"
+    CLICKED = "Clicked"
+    CONVERTED = "Converted"
+    UNSUBSCRIBED = "Unsubscribed"
+
+
+class ConversionType(str, Enum):
+    """Type of conversion from campaign."""
+    RENEWED = "Renewed"
+    UPGRADED = "Upgraded"
+    ADDED_COVER = "AddedCover"
+    REFERRED = "Referred"
+
+
+# ============================================================================
+# DIGITAL BEHAVIOR DOMAIN ENUMS
+# ============================================================================
+
+class DeviceType(str, Enum):
+    """Type of device used for digital session."""
+    DESKTOP = "Desktop"
+    MOBILE = "Mobile"
+    TABLET = "Tablet"
+
+
+class SessionType(str, Enum):
+    """Type of digital session."""
+    WEB = "Web"
+    APP = "App"
+
+
+class DigitalEventType(str, Enum):
+    """Type of digital event."""
+    PAGE_VIEW = "PageView"
+    CLICK = "Click"
+    SEARCH = "Search"
+    FORM_START = "FormStart"
+    FORM_SUBMIT = "FormSubmit"
+    DOWNLOAD = "Download"
+
+
+class PageCategory(str, Enum):
+    """Category of page visited."""
+    HOME = "Home"
+    DASHBOARD = "Dashboard"
+    CLAIMS = "Claims"
+    BILLING = "Billing"
+    PRODUCTS = "Products"
+    SUPPORT = "Support"
+    FAQ = "FAQ"
+    ACCOUNT = "Account"
+    CANCEL = "Cancel"
+    UPGRADE = "Upgrade"
+    COMPARE = "Compare"
+
+
+# ============================================================================
+# SURVEY DOMAIN ENUMS
+# ============================================================================
+
+class SurveyType(str, Enum):
+    """Type of survey sent."""
+    POST_CLAIM = "PostClaim"
+    POST_INTERACTION = "PostInteraction"
+    POST_COMPLAINT_RESOLUTION = "PostComplaintResolution"
+    ANNUAL = "Annual"
+    RELATIONSHIP = "Relationship"
+
+
+class NPSCategory(str, Enum):
+    """NPS score category."""
+    PROMOTER = "Promoter"
+    PASSIVE = "Passive"
+    DETRACTOR = "Detractor"
+
+
+class CSATLabel(str, Enum):
+    """CSAT score label."""
+    VERY_SATISFIED = "VerySatisfied"
+    SATISFIED = "Satisfied"
+    NEUTRAL = "Neutral"
+    DISSATISFIED = "Dissatisfied"
+    VERY_DISSATISFIED = "VeryDissatisfied"
+
+
+class SentimentLabel(str, Enum):
+    """Sentiment analysis label."""
+    POSITIVE = "Positive"
+    NEUTRAL = "Neutral"
+    NEGATIVE = "Negative"
+
+
+class SurveyChannel(str, Enum):
+    """Channel through which survey was delivered."""
+    EMAIL = "Email"
+    SMS = "SMS"
+    IN_APP = "InApp"
+
+
+class ProcessingStatus(str, Enum):
+    """Status of deferred LLM processing."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+# ============================================================================
+# TRIGGER EVENT TYPES
+# ============================================================================
+
+class TriggerEventType(str, Enum):
+    """Types of events that trigger CRM actions."""
+    # Claims triggers
+    CLAIM_SUBMITTED = "ClaimSubmitted"
+    CLAIM_REJECTED = "ClaimRejected"
+    CLAIM_DELAYED = "ClaimDelayed"
+    CLAIM_PAID = "ClaimPaid"
+    CLAIM_LIMIT_EXHAUSTED = "ClaimLimitExhausted"
+    
+    # Billing triggers
+    INVOICE_ISSUED = "InvoiceIssued"
+    PAYMENT_DUE = "PaymentDue"
+    PAYMENT_RECEIVED = "PaymentReceived"
+    PAYMENT_FAILED = "PaymentFailed"
+    ARREARS_CREATED = "ArrearsCreated"
+    POLICY_SUSPENDED = "PolicySuspended"
+    POLICY_LAPSED = "PolicyLapsed"
+    
+    # Policy triggers
+    RENEWAL_REMINDER = "RenewalReminder"
+    POLICY_ANNIVERSARY = "PolicyAnniversary"
+    
+    # CRM triggers
+    INTERACTION_COMPLETED = "InteractionCompleted"
+    CASE_RESOLVED = "CaseResolved"
+    COMPLAINT_RESOLVED = "ComplaintResolved"
