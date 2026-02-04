@@ -8,7 +8,7 @@ simulation:
   # population to build before analysis. Claims require waiting periods
   # to complete (2-12 months), so warmup should be at least 2 years.
   start_date: "2020-01-01"
-  end_date: "2025-12-31"  # 8 years total
+  end_date: "2022-12-31"  # 3 years for fresh run
   warmup_days: 730        # First 2 years = warmup, remaining 6 = analysis
 
 scale:

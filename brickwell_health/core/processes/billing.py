@@ -247,8 +247,13 @@ class BillingProcess(BaseProcess):
             next_attempt_date = invoice_data["next_attempt_date"]
             policy_id = invoice_data["policy_id"]
 
-            # Only process if today is the scheduled attempt date
-            if current_date != next_attempt_date:
+            # Skip if no more attempts scheduled (None means retries exhausted)
+            if next_attempt_date is None:
+                continue
+
+            # Process if today is on or after the scheduled attempt date
+            # This handles resume scenarios where next_attempt_date may be in the past
+            if current_date < next_attempt_date:
                 continue
 
             policy_data = self.active_policies.get(policy_id)
@@ -268,23 +273,23 @@ class BillingProcess(BaseProcess):
             # Determine if more retries are available after this attempt
             retries_remaining = total_attempts - attempt_number
 
-            # Attempt direct debit
+            # Create payment record for this attempt (PENDING status)
+            # All direct debit attempts create a payment record for audit trail
+            payment = self.billing_gen.generate_payment(
+                policy=policy_data.get("policy"),
+                invoice=invoice,
+                payment_date=current_date,
+                payment_method=PaymentMethod.DIRECT_DEBIT,
+            )
+            self.batch_writer.add("payment", payment.model_dump_db())
+
+            # Flush to commit PENDING state before updating (for CDC)
+            self.batch_writer.flush_for_cdc("payment", "payment_id", payment.payment_id)
+
+            # Determine direct debit outcome
             success = self.rng.random() < self.payment_success_rate
 
             if success:
-                # Create payment
-                payment = self.billing_gen.generate_payment(
-                    policy=policy_data.get("policy"),
-                    invoice=invoice,
-                    payment_date=current_date,
-                    payment_method=PaymentMethod.DIRECT_DEBIT,
-                )
-
-                self.batch_writer.add("payment", payment.model_dump_db())
-
-                # Flush to commit PENDING state before updating to COMPLETED (for CDC)
-                self.batch_writer.flush_for_cdc("payment", "payment_id", payment.payment_id)
-
                 # Update payment status from PENDING to COMPLETED
                 self._update_payment_status(payment, PaymentStatus.COMPLETED)
 
@@ -305,8 +310,21 @@ class BillingProcess(BaseProcess):
                 self.billing_gen.mark_invoice_paid(invoice, payment)
                 self._update_invoice_status(invoice)
 
+                # Persist retry state before removing (for resume support)
+                self._update_invoice_retry_state(invoice_id, invoice_data)
+
                 # Remove from pending
                 del self.pending_invoices[invoice_id]
+
+                # Check if suspended policy should be reinstated
+                if policy_data.get("status") == "Suspended" and policy_data.get("suspension_reason") == "Arrears":
+                    # Check if any pending invoices remain for this policy
+                    has_remaining = any(
+                        inv_data["policy_id"] == policy_id
+                        for inv_data in self.pending_invoices.values()
+                    )
+                    if not has_remaining:
+                        self._reinstate_policy_from_arrears(policy_id, policy_data, current_date)
 
                 self.increment_stat("payments_successful")
 
@@ -317,12 +335,18 @@ class BillingProcess(BaseProcess):
                 )
 
             else:
-                # Failed debit
+                # Update payment status from PENDING to FAILED
+                self._update_payment_status(payment, PaymentStatus.FAILED)
+
+                # Failed debit - determine retry scheduling
                 if retries_remaining > 0:
                     # Schedule retry
                     next_retry = current_date + timedelta(days=self.retry_interval_days)
                     invoice_data["next_attempt_date"] = next_retry
                     retry_scheduled = True
+
+                    # Persist retry state for resume support
+                    self._update_invoice_retry_state(invoice_id, invoice_data)
 
                     logger.debug(
                         "direct_debit_failed_retry_scheduled",
@@ -337,6 +361,9 @@ class BillingProcess(BaseProcess):
                     retry_scheduled = False
                     next_retry = None
 
+                    # Persist retry state for resume support
+                    self._update_invoice_retry_state(invoice_id, invoice_data)
+
                     logger.debug(
                         "direct_debit_failed_no_retries",
                         invoice_id=str(invoice_id),
@@ -344,14 +371,14 @@ class BillingProcess(BaseProcess):
                         total_attempts=total_attempts,
                     )
 
-                # Record failed debit result
+                # Record failed debit result (now with payment reference)
                 result = self.billing_gen.generate_direct_debit_result(
                     mandate=mandate,
                     invoice=invoice,
                     attempt_date=current_date,
                     attempt_number=attempt_number,
                     success=False,
-                    payment=None,
+                    payment=payment,  # Now includes payment reference
                     retry_scheduled=retry_scheduled,
                     retry_date=next_retry,
                 )
@@ -431,6 +458,9 @@ class BillingProcess(BaseProcess):
 
                 self.increment_stat("arrears_created")
 
+                # Persist retry state for resume support
+                self._update_invoice_retry_state(invoice_id, invoice_data)
+
                 # Update invoice status
                 invoice.invoice_status = InvoiceStatus.OVERDUE
 
@@ -509,6 +539,45 @@ class BillingProcess(BaseProcess):
             policy_id,
             primary_member_id,
             suspension_reason="arrears",
+        )
+
+    def _reinstate_policy_from_arrears(
+        self,
+        policy_id: UUID,
+        policy_data: dict,
+        current_date: date,
+    ) -> None:
+        """
+        Reinstate a suspended policy after arrears are paid.
+
+        Called when a policy that was suspended for non-payment has
+        successfully paid all pending invoices.
+
+        Args:
+            policy_id: Policy UUID
+            policy_data: Policy data dictionary
+            current_date: Current simulation date
+        """
+        # Update in memory
+        policy_data["status"] = "Active"
+        policy_data.pop("suspension_date", None)
+        policy_data.pop("suspension_reason", None)
+
+        # Update in database
+        sql = f"""
+            UPDATE policy
+            SET policy_status = 'Active',
+                modified_at = '{self.sim_env.current_datetime.isoformat()}',
+                modified_by = 'SIMULATION'
+            WHERE policy_id = '{policy_id}'
+        """
+        self.batch_writer.add_raw_sql("policy_reinstatement", sql)
+
+        self.increment_stat("policies_reinstated")
+        logger.info(
+            "policy_reinstated_from_arrears",
+            policy_id=str(policy_id),
+            date=current_date.isoformat(),
         )
 
     def _lapse_policy_for_arrears(
@@ -636,6 +705,7 @@ class BillingProcess(BaseProcess):
             payments_failed=stats.get("payments_failed", 0),
             arrears_created=stats.get("arrears_created", 0),
             policies_suspended_arrears=stats.get("policies_suspended_arrears", 0),
+            policies_reinstated=stats.get("policies_reinstated", 0),
             policies_lapsed=stats.get("policies_lapsed", 0),
         )
 
@@ -687,6 +757,31 @@ class BillingProcess(BaseProcess):
             key_value=payment.payment_id,
             updates={
                 "payment_status": new_status.value,
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
+            },
+        )
+
+    def _update_invoice_retry_state(self, invoice_id: UUID, invoice_data: dict) -> None:
+        """
+        Persist invoice retry state to database for resume support.
+
+        Saves retry_attempts, next_retry_date, and arrears_created to the invoice
+        table so that resume from database (without checkpoint) works correctly.
+
+        Args:
+            invoice_id: Invoice UUID
+            invoice_data: Invoice data dictionary with retry state
+        """
+        next_attempt = invoice_data.get("next_attempt_date")
+        self.batch_writer.update_record(
+            table_name="invoice",
+            key_field="invoice_id",
+            key_value=invoice_id,
+            updates={
+                "retry_attempts": invoice_data.get("attempts", 0),
+                "next_retry_date": next_attempt.isoformat() if next_attempt else None,
+                "arrears_created": invoice_data.get("arrears_created", False),
                 "modified_at": self.sim_env.current_datetime.isoformat(),
                 "modified_by": "SIMULATION",
             },

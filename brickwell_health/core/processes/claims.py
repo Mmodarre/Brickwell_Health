@@ -347,7 +347,7 @@ class ClaimsProcess(BaseProcess):
             service_type=service_type,  # Pass pre-sampled service type
         )
 
-        # Step 5: Cap benefit at remaining limit if partial limit remains
+        # Step 5: Calculate benefit capping (for audit trail - applied during ASSESSED)
         # Re-fetch remaining limit using actual claim line category (may differ)
         remaining_limit = self._get_remaining_limit(
             member_data,
@@ -355,32 +355,24 @@ class ClaimsProcess(BaseProcess):
             benefit_year,
         )
 
+        # Store original amounts for SUBMITTED state
+        original_benefit = claim.total_benefit
+        original_gap = claim.total_gap
+
+        # Pre-calculate capping info (applied during ASSESSED transition for audit trail)
+        capped_benefit: Decimal | None = None
+        additional_gap = Decimal("0")
         if remaining_limit is not None:
-            original_benefit = claim.total_benefit
-            # Cap benefit at remaining limit
             capped_benefit = min(original_benefit, remaining_limit)
-            # Member pays the difference as gap
             additional_gap = original_benefit - capped_benefit
 
-            if additional_gap > Decimal("0"):
-                # Update claim header
-                claim.total_benefit = capped_benefit
-                claim.total_gap = claim.total_gap + additional_gap
-
-                # Update claim line
-                claim_line.benefit_amount = capped_benefit
-                claim_line.gap_amount = claim_line.gap_amount + additional_gap
-
-                # Update extras claim
-                extras_claim.benefit_amount = capped_benefit
-                extras_claim.annual_limit_impact = capped_benefit
-
-        # Write claim as SUBMITTED
+        # Write claim as SUBMITTED with ORIGINAL uncapped amounts (audit trail)
         self.batch_writer.add("claim", claim.model_dump_db())
         self.batch_writer.add("claim_line", claim_line.model_dump())
         self.batch_writer.add("extras_claim", extras_claim.model_dump_db())
 
         # Step 6: Schedule lifecycle transitions (benefit usage recorded when PAID)
+        # Store capping info for application during ASSESSED transition
         self._schedule_claim_transitions(
             claim=claim,
             claim_line_ids=[claim_line.claim_line_id],
@@ -389,7 +381,13 @@ class ClaimsProcess(BaseProcess):
             approved=approved,
             denial_reason=denial_reason if not approved else None,
             benefit_category_id=claim_line.benefit_category_id,
-            benefit_amount=extras_claim.benefit_amount,
+            benefit_amount=capped_benefit if capped_benefit is not None else original_benefit,
+            # Additional capping info for ASSESSED transition (audit trail)
+            capped_benefit=capped_benefit,
+            additional_gap=additional_gap,
+            original_benefit=original_benefit,
+            original_gap=original_gap,
+            extras_claim_id=extras_claim.extras_claim_id,
         )
 
         self.increment_stat("extras_claims")
@@ -524,6 +522,8 @@ class ClaimsProcess(BaseProcess):
         """
         Generate a rejected claim with a specific denial reason.
 
+        Claims go through lifecycle transitions: SUBMITTED -> ASSESSED -> REJECTED
+
         Args:
             member_data: Member data dictionary
             service_date: Date of attempted service
@@ -531,7 +531,7 @@ class ClaimsProcess(BaseProcess):
             denial_reason: Reason for denial (DenialReason enum)
             **kwargs: Additional args (e.g., age for hospital claims)
         """
-        claim = self.claims_gen.generate_rejected_claim(
+        claim, claim_line = self.claims_gen.generate_rejected_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
             claim_type=claim_type,
@@ -540,7 +540,21 @@ class ClaimsProcess(BaseProcess):
             **kwargs,
         )
 
+        # Write claim and claim line as SUBMITTED
         self.batch_writer.add("claim", claim.model_dump_db())
+        self.batch_writer.add("claim_line", claim_line.model_dump())
+
+        # Schedule lifecycle transitions: SUBMITTED -> ASSESSED -> REJECTED
+        self._schedule_claim_transitions(
+            claim=claim,
+            claim_line_ids=[claim_line.claim_line_id],
+            member_data=member_data,
+            lodgement_date=service_date,
+            approved=False,  # Will transition to REJECTED
+            denial_reason=denial_reason,
+            benefit_category_id=None,  # No benefit tracking for rejected claims
+            benefit_amount=None,
+        )
 
         self.increment_stat("rejected_claims")
         logger.debug(
@@ -560,6 +574,12 @@ class ClaimsProcess(BaseProcess):
         denial_reason: DenialReason | None = None,
         benefit_category_id: int | None = None,
         benefit_amount: Decimal | None = None,
+        # Benefit capping info for audit trail (applied during ASSESSED transition)
+        capped_benefit: Decimal | None = None,
+        additional_gap: Decimal | None = None,
+        original_benefit: Decimal | None = None,
+        original_gap: Decimal | None = None,
+        extras_claim_id: UUID | None = None,
     ) -> None:
         """
         Schedule future state transitions for a claim.
@@ -582,6 +602,11 @@ class ClaimsProcess(BaseProcess):
             denial_reason: Denial reason for stochastic rejections
             benefit_category_id: Benefit category for usage tracking (extras)
             benefit_amount: Benefit amount for usage tracking (extras)
+            capped_benefit: Pre-calculated capped benefit for audit trail (extras)
+            additional_gap: Gap adjustment due to capping (extras)
+            original_benefit: Original uncapped benefit (extras)
+            original_gap: Original gap before capping (extras)
+            extras_claim_id: Extras claim ID for capping updates (extras)
         """
         delays = self.config.claims.processing_delays
         auto_adj = delays.auto_adjudication
@@ -618,6 +643,12 @@ class ClaimsProcess(BaseProcess):
             "member_data": member_data,
             "policy_id": claim.policy_id,  # Store for benefit usage recording
             "is_auto_adjudicated": is_auto_adjudicated,  # Track for analytics
+            # Benefit capping info for audit trail (applied during ASSESSED)
+            "capped_benefit": capped_benefit,
+            "additional_gap": additional_gap,
+            "original_benefit": original_benefit,
+            "original_gap": original_gap,
+            "extras_claim_id": extras_claim_id,
         }
 
         # Emit CRM event for claim submission
@@ -708,6 +739,11 @@ class ClaimsProcess(BaseProcess):
                 # Flush if claim is still in buffer to ensure INSERT is committed for CDC
                 self.batch_writer.flush_for_cdc("claim", "claim_id", claim_id)
 
+                # Apply benefit capping during ASSESSED transition (audit trail)
+                # SUBMITTED shows original uncapped amounts, ASSESSED shows capped amounts
+                if data.get("capped_benefit") is not None and data.get("additional_gap"):
+                    self._apply_benefit_capping(claim_id, data)
+
                 self._update_claim_status(
                     claim_id,
                     ClaimStatus.ASSESSED,
@@ -794,6 +830,76 @@ class ClaimsProcess(BaseProcess):
                 )
 
                 del self.pending_claims[claim_id]
+
+    def _apply_benefit_capping(self, claim_id: UUID, data: dict) -> None:
+        """
+        Apply benefit capping during ASSESSED transition for audit trail.
+
+        SUBMITTED state shows original uncapped amounts.
+        ASSESSED state shows capped amounts (after limit verification).
+
+        Updates claim, claim_line, and extras_claim records with capped amounts.
+
+        Args:
+            claim_id: The claim UUID
+            data: Pending claim data with capping info
+        """
+        capped_benefit = data["capped_benefit"]
+        additional_gap = data["additional_gap"]
+        original_gap = data.get("original_gap", Decimal("0"))
+        claim_line_ids = data["claim_line_ids"]
+        extras_claim_id = data.get("extras_claim_id")
+
+        # Update claim header with capped amounts
+        self.batch_writer.update_record(
+            "claim",
+            "claim_id",
+            claim_id,
+            {
+                "total_benefit": float(capped_benefit),
+                "total_gap": float(original_gap + additional_gap),
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
+            },
+        )
+
+        # Update claim line with capped amounts
+        for claim_line_id in claim_line_ids:
+            self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", claim_line_id)
+            self.batch_writer.update_record(
+                "claim_line",
+                "claim_line_id",
+                claim_line_id,
+                {
+                    "benefit_amount": float(capped_benefit),
+                    "gap_amount": float(original_gap + additional_gap),
+                    "modified_at": self.sim_env.current_datetime.isoformat(),
+                    "modified_by": "SIMULATION",
+                },
+            )
+
+        # Update extras claim with capped amounts (if extras claim)
+        if extras_claim_id:
+            self.batch_writer.flush_for_cdc("extras_claim", "extras_claim_id", extras_claim_id)
+            self.batch_writer.update_record(
+                "extras_claim",
+                "extras_claim_id",
+                extras_claim_id,
+                {
+                    "benefit_amount": float(capped_benefit),
+                    "annual_limit_impact": float(capped_benefit),
+                    "modified_at": self.sim_env.current_datetime.isoformat(),
+                    "modified_by": "SIMULATION",
+                },
+            )
+
+        logger.debug(
+            "benefit_capping_applied",
+            claim_id=str(claim_id),
+            original_benefit=float(data.get("original_benefit", 0) or 0),
+            capped_benefit=float(capped_benefit),
+            additional_gap=float(additional_gap),
+        )
 
     def _update_claim_status(
         self,

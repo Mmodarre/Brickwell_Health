@@ -237,7 +237,7 @@ class TestRejectedClaimLifecycle:
         sample_member,
     ):
         """Deterministic rejections should be created with REJECTED status immediately."""
-        claim = claims_generator.generate_rejected_claim(
+        claim, claim_line = claims_generator.generate_rejected_claim(
             policy=sample_policy,
             member=sample_member,
             claim_type=ClaimType.EXTRAS,
@@ -245,13 +245,17 @@ class TestRejectedClaimLifecycle:
             denial_reason=DenialReason.NO_COVERAGE,
         )
 
-        assert claim.claim_status == ClaimStatus.REJECTED, (
-            f"Expected REJECTED, got {claim.claim_status}"
+        # Rejected claims now go through lifecycle: SUBMITTED -> ASSESSED -> REJECTED
+        assert claim.claim_status == ClaimStatus.SUBMITTED, (
+            f"Expected SUBMITTED (lifecycle), got {claim.claim_status}"
         )
-        assert claim.rejection_reason_id is not None, (
-            "Expected rejection_reason_id to be set"
+        assert claim.rejection_reason_id is None, (
+            "Expected rejection_reason_id to be None (set during REJECTED transition)"
         )
-        # Deterministic rejections have assessment_date set (assessed immediately)
-        assert claim.assessment_date is not None, (
-            "Expected assessment_date to be set for deterministic rejections"
+        assert claim.assessment_date is None, (
+            "Expected assessment_date to be None (set during ASSESSED transition)"
+        )
+        # Verify claim line is created with Pending status
+        assert claim_line.line_status == "Pending", (
+            f"Expected Pending line status, got {claim_line.line_status}"
         )

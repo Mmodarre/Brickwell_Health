@@ -163,9 +163,9 @@ class TestClaimScheduling:
 
         pending = mock_claims_process.pending_claims[claim_id]
 
-        # Assessment date should be lodgement + 1-3 days
-        assert pending["assessment_date"] >= lodgement_date + timedelta(days=1)
-        assert pending["assessment_date"] <= lodgement_date + timedelta(days=3)
+        # Assessment date should be lodgement + 0+ days (auto-adjudicated can be same-day)
+        assert pending["assessment_date"] >= lodgement_date
+        assert pending["assessment_date"] <= lodgement_date + timedelta(days=14)  # Max manual review
 
         # Approval date should be assessment + 0-1 days
         assert pending["approval_date"] >= pending["assessment_date"]
@@ -241,7 +241,12 @@ class TestClaimTransitions:
         """Claims with approved=False should transition from ASSESSED to REJECTED."""
         claim_id = uuid4()
         claim_line_id = uuid4()
+        member_id = uuid4()
+        policy_id = uuid4()
         approval_date = date(2024, 6, 18)
+
+        mock_member = MagicMock()
+        mock_member.member_id = member_id
 
         mock_claims_process.pending_claims[claim_id] = {
             "status": "ASSESSED",
@@ -253,7 +258,8 @@ class TestClaimTransitions:
             "claim_line_ids": [claim_line_id],
             "benefit_category_id": 3,
             "benefit_amount": Decimal("150.00"),
-            "member_data": {},
+            "member_data": {"member": mock_member},
+            "policy_id": policy_id,
         }
 
         mock_claims_process._process_claim_transitions(approval_date)
@@ -351,7 +357,12 @@ class TestClaimTransitions:
         """Claim lines should be updated to 'Rejected' on stochastic rejection."""
         claim_id = uuid4()
         claim_line_id = uuid4()
+        member_id = uuid4()
+        policy_id = uuid4()
         approval_date = date(2024, 6, 18)
+
+        mock_member = MagicMock()
+        mock_member.member_id = member_id
 
         mock_claims_process.pending_claims[claim_id] = {
             "status": "ASSESSED",
@@ -363,7 +374,8 @@ class TestClaimTransitions:
             "claim_line_ids": [claim_line_id],
             "benefit_category_id": 3,
             "benefit_amount": Decimal("150.00"),
-            "member_data": {},
+            "member_data": {"member": mock_member},
+            "policy_id": policy_id,
         }
 
         mock_claims_process._process_claim_transitions(approval_date)

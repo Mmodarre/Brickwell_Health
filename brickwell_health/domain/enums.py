@@ -167,7 +167,6 @@ class PaymentStatus(str, Enum):
     PENDING = "Pending"
     COMPLETED = "Completed"
     FAILED = "Failed"
-    REVERSED = "Reversed"
 
 
 class InvoiceStatus(str, Enum):

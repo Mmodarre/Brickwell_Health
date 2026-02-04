@@ -59,10 +59,53 @@ def main(ctx, config, verbose, json_logs):
     is_flag=True,
     help="Run workers sequentially (for debugging)",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Resume from last checkpoint instead of fresh start",
+)
+@click.option(
+    "--extend-days",
+    type=int,
+    default=None,
+    help="Extend simulation by N days beyond checkpoint date (requires --resume)",
+)
+@click.option(
+    "--end-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Override end date (format: YYYY-MM-DD)",
+)
 @click.pass_context
-def run(ctx, workers, sequential):
-    """Run the simulation."""
+def run(ctx, workers, sequential, resume, extend_days, end_date):
+    """Run the simulation.
+    
+    Examples:
+    
+    \b
+    # Fresh simulation
+    brickwell run
+    
+    \b
+    # Resume from checkpoint
+    brickwell run --resume
+    
+    \b
+    # Resume and extend by 30 days
+    brickwell run --resume --extend-days 30
+    
+    \b
+    # Resume to specific end date
+    brickwell run --resume --end-date 2025-06-30
+    """
+    from datetime import timedelta
     from brickwell_health.core.parallel_runner import ParallelRunner
+    from brickwell_health.core.checkpoint_v2 import (
+        CheckpointManagerV2, 
+        CheckpointNotFoundError,
+        get_checkpoint_dates,
+    )
+    from pathlib import Path
 
     config_path = ctx.obj.get("config_path")
 
@@ -73,13 +116,42 @@ def run(ctx, workers, sequential):
         if workers is not None:
             config.parallel.num_workers = workers
 
+        # Handle --extend-days (requires --resume)
+        if extend_days is not None and not resume:
+            click.echo("Error: --extend-days requires --resume flag", err=True)
+            sys.exit(1)
+
+        # Handle end date override
+        if end_date is not None:
+            config.simulation.end_date = end_date.date()
+        elif extend_days is not None and resume:
+            # Get checkpoint date and calculate new end date
+            checkpoint_dir = Path(config.reference_data_path).parent / "checkpoints"
+            checkpoint_mgr = CheckpointManagerV2(checkpoint_dir)
+            
+            # Load checkpoint to get date (use worker 0 as reference)
+            checkpoint = checkpoint_mgr.load_checkpoint(0)
+            if checkpoint is None:
+                raise CheckpointNotFoundError(
+                    "No checkpoint found for worker 0. Cannot determine checkpoint date."
+                )
+            
+            checkpoint_date, _ = get_checkpoint_dates(checkpoint)
+            new_end_date = checkpoint_date + timedelta(days=extend_days)
+            config.simulation.end_date = new_end_date
+            
+            click.echo(f"  Extending from checkpoint date {checkpoint_date} by {extend_days} days")
+
         # Validate configuration
         warnings = validate_config(config)
         for warning in warnings:
             click.echo(f"Warning: {warning}", err=True)
 
+        mode = "resume" if resume else "fresh"
         click.echo(f"Starting simulation with {config.parallel.num_workers} workers...")
-        click.echo(f"  Start date: {config.simulation.start_date}")
+        click.echo(f"  Mode: {mode}")
+        if not resume:
+            click.echo(f"  Start date: {config.simulation.start_date}")
         click.echo(f"  End date: {config.simulation.end_date}")
         click.echo(f"  Target members: {config.scale.target_member_count:,}")
 
@@ -87,12 +159,13 @@ def run(ctx, workers, sequential):
         runner = ParallelRunner(config, log_level=log_level)
 
         if sequential:
-            results = runner.run_sequential()
+            results = runner.run_sequential(resume=resume)
         else:
-            results = runner.run()
+            results = runner.run(resume=resume)
 
         # Print summary
         click.echo("\n=== Simulation Complete ===")
+        click.echo(f"Mode: {results.get('mode', 'fresh')}")
         click.echo(f"Elapsed time: {results['total_elapsed_seconds']:.1f} seconds")
         click.echo(f"Simulation speed: {results['avg_days_per_second']:.1f} days/second")
         click.echo(f"\nAcquisition:")
@@ -106,6 +179,9 @@ def run(ctx, workers, sequential):
             if count > 0:
                 click.echo(f"  {table}: {count:,}")
 
+    except CheckpointNotFoundError as e:
+        click.echo(f"Checkpoint error: {e}", err=True)
+        sys.exit(1)
     except Exception as e:
         logger.exception("simulation_failed", error=str(e))
         click.echo(f"Error: {e}", err=True)
@@ -126,8 +202,7 @@ def run(ctx, workers, sequential):
 @click.pass_context
 def init_db(ctx, drop_existing, enable_cdc):
     """Initialize the database schema."""
-    import importlib.util
-    from pathlib import Path
+    from brickwell_health.db.initialize import init_database
     
     config_path = ctx.obj.get("config_path")
 
@@ -142,13 +217,7 @@ def init_db(ctx, drop_existing, enable_cdc):
                 click.echo("Aborted.")
                 return
 
-        # Load init_db module from scripts directory
-        scripts_path = Path(__file__).parent.parent / "scripts" / "init_db.py"
-        spec = importlib.util.spec_from_file_location("init_db", scripts_path)
-        init_db_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(init_db_module)
-        
-        init_db_module.init_database(config_path, drop_existing, enable_cdc)
+        init_database(config_path, drop_existing, enable_cdc)
 
         click.echo("Database initialized successfully.")
         if enable_cdc:

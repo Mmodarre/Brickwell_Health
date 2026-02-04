@@ -2,10 +2,12 @@
 Parallel runner for Brickwell Health Simulator.
 
 Orchestrates multiple worker processes for parallel simulation.
+Supports both fresh runs and resume from checkpoint.
 """
 
 import multiprocessing
 import time
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -13,6 +15,10 @@ from sqlalchemy import text
 
 from brickwell_health.config.models import SimulationConfig
 from brickwell_health.core.worker import run_worker
+from brickwell_health.core.checkpoint_v2 import (
+    CheckpointManagerV2,
+    CheckpointNotFoundError,
+)
 from brickwell_health.db.connection import create_engine_from_config
 
 
@@ -26,9 +32,14 @@ class ParallelRunner:
     Uses multiprocessing to run workers in parallel, each handling
     a partition of entities.
 
+    Supports two modes:
+    - Fresh run: Start simulation from scratch
+    - Resume mode: Continue from checkpoint
+
     Usage:
         runner = ParallelRunner(config)
-        results = runner.run()
+        results = runner.run()  # Fresh run
+        results = runner.run(resume=True)  # Resume from checkpoint
     """
 
     def __init__(self, config: SimulationConfig, log_level: str = "INFO"):
@@ -42,26 +53,43 @@ class ParallelRunner:
         self.config = config
         self.num_workers = config.parallel.num_workers
         self.log_level = log_level
+        
+        # Checkpoint manager for verifying checkpoints exist
+        checkpoint_dir = Path(config.reference_data_path).parent / "checkpoints"
+        self.checkpoint_manager = CheckpointManagerV2(checkpoint_dir)
 
-    def run(self) -> dict[str, Any]:
+    def run(self, resume: bool = False) -> dict[str, Any]:
         """
         Run the simulation with parallel workers.
 
+        Args:
+            resume: If True, resume from checkpoint instead of fresh start
+
         Returns:
             Aggregated results from all workers
+            
+        Raises:
+            CheckpointNotFoundError: If resume=True but checkpoints missing
         """
+        mode = "resume" if resume else "fresh"
+        
+        # Verify checkpoints exist for all workers if resuming
+        if resume:
+            self._verify_checkpoints_exist()
+        
         logger.info(
             "parallel_run_starting",
             num_workers=self.num_workers,
             start_date=self.config.simulation.start_date.isoformat(),
             end_date=self.config.simulation.end_date.isoformat(),
+            mode=mode,
         )
 
         start_time = time.time()
 
-        # Create worker arguments
+        # Create worker arguments (including resume_mode)
         worker_args = [
-            (self.config, worker_id, self.num_workers, self.log_level)
+            (self.config, worker_id, self.num_workers, self.log_level, resume)
             for worker_id in range(self.num_workers)
         ]
 
@@ -72,6 +100,7 @@ class ParallelRunner:
         # Aggregate results
         elapsed = time.time() - start_time
         aggregated = self._aggregate_results(results, elapsed)
+        aggregated["mode"] = mode
 
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
@@ -81,31 +110,48 @@ class ParallelRunner:
             elapsed_seconds=f"{elapsed:.1f}",
             total_days=aggregated["total_simulation_days"],
             avg_days_per_second=f"{aggregated['avg_days_per_second']:.1f}",
+            mode=mode,
         )
 
         return aggregated
 
-    def run_sequential(self) -> dict[str, Any]:
+    def run_sequential(self, resume: bool = False) -> dict[str, Any]:
         """
         Run simulation sequentially (for debugging).
 
+        Args:
+            resume: If True, resume from checkpoint instead of fresh start
+
         Returns:
             Aggregated results
+            
+        Raises:
+            CheckpointNotFoundError: If resume=True but checkpoints missing
         """
+        mode = "resume" if resume else "fresh"
+        
+        # Verify checkpoints exist for all workers if resuming
+        if resume:
+            self._verify_checkpoints_exist()
+        
         logger.info(
             "sequential_run_starting",
             num_workers=self.num_workers,
+            mode=mode,
         )
 
         start_time = time.time()
 
         results = []
         for worker_id in range(self.num_workers):
-            result = run_worker(self.config, worker_id, self.num_workers, self.log_level)
+            result = run_worker(
+                self.config, worker_id, self.num_workers, self.log_level, resume
+            )
             results.append(result)
 
         elapsed = time.time() - start_time
         aggregated = self._aggregate_results(results, elapsed)
+        aggregated["mode"] = mode
 
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
@@ -113,9 +159,34 @@ class ParallelRunner:
         logger.info(
             "sequential_run_completed",
             elapsed_seconds=f"{elapsed:.1f}",
+            mode=mode,
         )
 
         return aggregated
+
+    def _verify_checkpoints_exist(self) -> None:
+        """
+        Verify that checkpoints exist for all workers.
+        
+        Raises:
+            CheckpointNotFoundError: If any worker is missing a checkpoint
+        """
+        missing_workers = []
+        for worker_id in range(self.num_workers):
+            if not self.checkpoint_manager.has_checkpoint(worker_id):
+                missing_workers.append(worker_id)
+        
+        if missing_workers:
+            raise CheckpointNotFoundError(
+                f"Cannot resume: missing checkpoints for workers {missing_workers}. "
+                f"Run a fresh simulation first to create checkpoints."
+            )
+        
+        logger.info(
+            "checkpoints_verified",
+            num_workers=self.num_workers,
+            all_present=True,
+        )
 
     def _aggregate_results(
         self,

@@ -6,16 +6,25 @@ Handles policy suspensions, reactivations, and extensions.
 
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Generator, Any
+from typing import Generator, Any, TYPE_CHECKING
 from uuid import UUID
 
 import structlog
+from sqlalchemy.engine import Engine
 
 from brickwell_health.core.processes.base import BaseProcess
+from brickwell_health.core.state_reconstruction import (
+    load_single_policy,
+    load_single_policy_members,
+    load_single_policy_waiting_periods,
+)
 from brickwell_health.domain.enums import SuspensionType
 from brickwell_health.domain.policy import SuspensionCreate
 from brickwell_health.generators.billing_generator import BillingGenerator
 from brickwell_health.utils.time_conversion import last_of_month
+
+if TYPE_CHECKING:
+    from brickwell_health.core.shared_state import SharedState
 
 
 logger = structlog.get_logger()
@@ -61,6 +70,8 @@ class SuspensionProcess(BaseProcess):
         *args: Any,
         active_policies: dict[UUID, dict] | None = None,
         active_suspensions: dict[UUID, dict] | None = None,
+        shared_state: "SharedState | None" = None,
+        engine: Engine | None = None,
         **kwargs: Any,
     ):
         """
@@ -69,6 +80,8 @@ class SuspensionProcess(BaseProcess):
         Args:
             active_policies: Dictionary of active policies (policy_id -> policy data)
             active_suspensions: Dictionary of active suspensions (suspension_id -> suspension data)
+            shared_state: SharedState instance for updating policy_members and waiting_periods
+            engine: SQLAlchemy engine for database queries (used during reactivation)
         """
         super().__init__(*args, **kwargs)
 
@@ -77,6 +90,12 @@ class SuspensionProcess(BaseProcess):
 
         # Track active suspensions for reactivation checking
         self.active_suspensions = active_suspensions if active_suspensions is not None else {}
+
+        # SharedState for updating policy_members when reactivating (resume scenario)
+        self.shared_state = shared_state
+
+        # Database engine for querying policy data when reactivating (resume scenario)
+        self.engine = engine
 
         # Initialize billing generator for refunds
         self.billing_gen = BillingGenerator(self.rng, self.reference, self.id_generator, sim_env=self.sim_env)
@@ -291,10 +310,14 @@ class SuspensionProcess(BaseProcess):
         """
         Check for suspensions that should end and reactivate policies.
 
+        Handles two scenarios:
+        1. Fresh run: Suspended policies are in active_policies with status="Suspended"
+        2. Resume: Suspended policies are NOT in active_policies but ARE in active_suspensions
+
         Args:
             current_date: Current simulation date
         """
-        # Check each active policy for suspension end
+        # Scenario 1: Check active_policies for suspended policies (fresh run)
         for policy_id, policy in list(self.active_policies.items()):
             if policy.get("status") != "Suspended":
                 continue
@@ -302,6 +325,27 @@ class SuspensionProcess(BaseProcess):
             suspension_end = policy.get("suspension_end")
             if suspension_end and current_date >= suspension_end:
                 self._reactivate_policy(policy_id, policy, current_date)
+
+        # Scenario 2: Check active_suspensions for expired suspensions (resume)
+        # During resume, suspended policies are loaded into active_suspensions
+        # but NOT into active_policies (by design, to prevent claims/billing)
+        # Note: active_suspensions is keyed by policy_id, not suspension_id
+        for policy_id, susp_data in list(self.active_suspensions.items()):
+            expected_end = susp_data.get("expected_end_date")
+            if expected_end and current_date >= expected_end:
+                # Skip if already handled by first loop (policy is in active_policies)
+                if policy_id in self.active_policies:
+                    continue
+                # Get actual suspension_id from the data
+                suspension_id = susp_data.get("suspension_id")
+                if not suspension_id:
+                    logger.warning(
+                        "reactivation_skipped_no_suspension_id",
+                        policy_id=str(policy_id),
+                    )
+                    continue
+                # Reactivate from suspension data (policy not in active_policies)
+                self._reactivate_from_suspension(policy_id, suspension_id, susp_data, current_date)
 
     def _reactivate_policy(
         self,
@@ -352,6 +396,11 @@ class SuspensionProcess(BaseProcess):
         """
         self.batch_writer.add_raw_sql("policy_update", sql)
 
+        # Note: Members are NOT deactivated during suspension (create_suspension only
+        # updates policy status), so we don't need to reactivate them here.
+        # Unconditionally setting is_active=TRUE could resurrect members that were
+        # legitimately removed (e.g., death) during the suspension period.
+
         self.increment_stat("suspensions_reactivated")
         logger.debug(
             "policy_reactivated",
@@ -359,6 +408,105 @@ class SuspensionProcess(BaseProcess):
             suspension_id=str(suspension_id) if suspension_id else None,
             original_end=old_suspension_end.isoformat() if old_suspension_end else None,
             reactivation_date=current_date.isoformat(),
+        )
+
+    def _reactivate_from_suspension(
+        self,
+        policy_id: UUID,
+        suspension_id: UUID,
+        susp_data: dict,
+        current_date: date,
+    ) -> None:
+        """
+        Reactivate a policy from suspension data (resume scenario).
+
+        This is used when the policy is NOT in active_policies but we have
+        suspension data from the database. This happens during resume when
+        suspended policies are intentionally excluded from active_policies.
+
+        After updating the database, this method also populates the in-memory
+        state (active_policies, policy_members, waiting_periods) so that other
+        processes can find and process the reactivated policy within the same
+        simulation run.
+
+        Args:
+            policy_id: Policy UUID
+            suspension_id: Suspension UUID
+            susp_data: Suspension data dict with expected_end_date, etc.
+            current_date: Current simulation date (reactivation date)
+        """
+
+        # Update suspension record to mark as completed
+        sql = f"""
+            UPDATE suspension
+            SET actual_end_date = '{current_date.isoformat()}',
+                status = 'Completed',
+                modified_at = '{self.sim_env.current_datetime.isoformat()}',
+                modified_by = 'SIMULATION'
+            WHERE suspension_id = '{suspension_id}'
+        """
+        self.batch_writer.add_raw_sql("suspension_update", sql)
+
+        # Update policy status back to Active
+        sql = f"""
+            UPDATE policy
+            SET policy_status = 'Active',
+                modified_at = '{self.sim_env.current_datetime.isoformat()}',
+                modified_by = 'SIMULATION'
+            WHERE policy_id = '{policy_id}'
+        """
+        self.batch_writer.add_raw_sql("policy_update", sql)
+
+        # Note: Members are NOT deactivated during suspension (create_suspension only
+        # updates policy status), so we don't need to reactivate them here.
+        # Unconditionally setting is_active=TRUE could resurrect members that were
+        # legitimately removed (e.g., death) during the suspension period.
+
+        # Remove from active_suspensions tracking (keyed by policy_id)
+        self.active_suspensions.pop(policy_id, None)
+
+        # Populate in-memory state if we have engine and shared_state
+        # This allows other processes (claims, billing, lifecycle) to find
+        # the reactivated policy within the same resume run
+        members_added = 0
+        if self.engine and self.shared_state:
+            # Flush batch_writer to commit the SQL updates to DB
+            # This is necessary because load_single_policy queries exclude suspended policies
+            self.batch_writer.flush_all()
+
+            with self.engine.connect() as conn:
+                # Load and add policy to active_policies
+                policy_data = load_single_policy(conn, policy_id, current_date)
+                if policy_data:
+                    self.active_policies[policy_id] = policy_data
+
+                # Load and add policy members to shared_state.policy_members
+                members = load_single_policy_members(conn, policy_id, current_date)
+                if members:
+                    self.shared_state.policy_members.update(members)
+                    members_added = len(members)
+
+                # Load and add waiting periods to shared_state.waiting_periods
+                waiting = load_single_policy_waiting_periods(conn, policy_id, current_date)
+                if waiting:
+                    self.shared_state.waiting_periods.update(waiting)
+
+            logger.info(
+                "policy_state_restored_to_memory",
+                policy_id=str(policy_id),
+                members_added=members_added,
+                waiting_periods_added=len(waiting) if waiting else 0,
+            )
+
+        self.increment_stat("suspensions_reactivated")
+        logger.info(
+            "policy_reactivated_from_suspension",
+            policy_id=str(policy_id),
+            suspension_id=str(suspension_id),
+            expected_end=susp_data.get("expected_end_date").isoformat() if susp_data.get("expected_end_date") else None,
+            reactivation_date=current_date.isoformat(),
+            suspension_type=susp_data.get("suspension_type"),
+            in_memory_state_updated=self.engine is not None and self.shared_state is not None,
         )
 
     def extend_suspension(

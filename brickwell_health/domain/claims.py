@@ -184,6 +184,8 @@ class ExtrasClaimCreate(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
+    modified_at: Optional[datetime] = None  # Set during benefit capping at ASSESSED transition
+    modified_by: Optional[str] = Field(None, max_length=50)
 
     def model_dump_db(self) -> dict:
         """Convert to dictionary for database insertion."""

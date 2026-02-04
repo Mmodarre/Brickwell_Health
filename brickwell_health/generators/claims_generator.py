@@ -646,9 +646,12 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         service_date: date,
         denial_reason: DenialReason,
         **kwargs: Any,
-    ) -> ClaimCreate:
+    ) -> tuple[ClaimCreate, ClaimLineCreate]:
         """
         Generate a rejected claim with a specific denial reason.
+
+        Claims are created as SUBMITTED and go through lifecycle transitions:
+        SUBMITTED -> ASSESSED -> REJECTED
 
         Args:
             policy: Policy
@@ -658,54 +661,98 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             denial_reason: Reason for denial (DenialReason enum)
 
         Returns:
-            ClaimCreate instance with REJECTED status
+            Tuple of (ClaimCreate, ClaimLineCreate) with SUBMITTED status
         """
         claim_id = self.id_generator.generate_uuid()
+        claim_line_id = self.id_generator.generate_uuid()
 
-        # Sample a charge amount based on claim type
+        # Sample a charge amount and determine item details based on claim type
         if claim_type == ClaimType.EXTRAS:
             service_type = self.propensity.sample_extras_service_type()
             charge_amount = Decimal(str(round(
                 self.propensity.sample_claim_amount(service_type), 2
             )))
             claim_channel = ClaimChannel.HICAPS
+            item_code = self._get_extras_item_code(service_type, None)
+            item_description = f"{service_type} service (rejected)"
+            benefit_category_id = self._get_benefit_category_id(service_type)
+            provider_id = self.uniform_int(1, 1000)
+            hospital_id = None
         elif claim_type == ClaimType.HOSPITAL:
             charge_amount = Decimal(str(round(
                 self.propensity.sample_claim_amount("Hospital", kwargs.get("age", 40)), 2
             )))
             claim_channel = ClaimChannel.HOSPITAL
+            item_code = "HOSP001"
+            item_description = "Hospital admission (rejected)"
+            benefit_category_id = None
+            provider_id = None
+            hospital_id = self.uniform_int(1, 200)
         else:  # AMBULANCE
             charge_amount = Decimal(str(round(
                 self.propensity.sample_claim_amount("Ambulance"), 2
             )))
             claim_channel = ClaimChannel.PAPER
+            item_code = "AMB001"
+            item_description = "Ambulance service (rejected)"
+            benefit_category_id = None
+            provider_id = None
+            hospital_id = None
 
-        return ClaimCreate(
+        # Claim header - created as SUBMITTED for lifecycle transitions
+        claim = ClaimCreate(
             claim_id=claim_id,
             claim_number=self.id_generator.generate_claim_number(),
             policy_id=policy.policy_id,
             member_id=member.member_id,
             coverage_id=NO_COVERAGE_PLACEHOLDER_ID,  # Placeholder for rejected claims
             claim_type=claim_type,
-            claim_status=ClaimStatus.REJECTED,
+            claim_status=ClaimStatus.SUBMITTED,  # Start as SUBMITTED for lifecycle
             service_date=service_date,
             lodgement_date=service_date,
-            assessment_date=service_date,
+            assessment_date=None,  # Set during lifecycle transition
             payment_date=None,  # No payment for rejected claims
-            provider_id=self.uniform_int(1, 1000) if claim_type == ClaimType.EXTRAS else None,
-            hospital_id=self.uniform_int(1, 200) if claim_type == ClaimType.HOSPITAL else None,
+            provider_id=provider_id,
+            hospital_id=hospital_id,
             total_charge=charge_amount,
             total_benefit=Decimal("0"),  # No benefit for rejected claims
             total_gap=charge_amount,  # Member pays full amount (or doesn't proceed)
             excess_applied=Decimal("0"),
             co_payment_applied=Decimal("0"),
-            rejection_reason_id=self._get_rejection_reason_id(denial_reason),
-            rejection_notes=denial_reason.value,
+            rejection_reason_id=None,  # Set during REJECTED transition
+            rejection_notes=None,  # Set during REJECTED transition
             claim_channel=claim_channel,
             pay_to="N/A",  # No payment for rejected claims
             created_at=self.get_current_datetime(),
             created_by="SIMULATION",
         )
+
+        # Claim line - created as Pending for lifecycle transitions
+        claim_line = ClaimLineCreate(
+            claim_line_id=claim_line_id,
+            claim_id=claim_id,
+            line_number=1,
+            item_code=item_code,
+            item_description=item_description,
+            clinical_category_id=None,
+            benefit_category_id=benefit_category_id,
+            service_date=service_date,
+            quantity=1,
+            charge_amount=charge_amount,
+            schedule_fee=None,
+            benefit_amount=Decimal("0"),  # No benefit for rejected claims
+            gap_amount=charge_amount,
+            line_status="Pending",  # Start as Pending for lifecycle
+            rejection_reason_id=None,  # Set during REJECTED transition
+            provider_id=provider_id,
+            provider_number=None,
+            tooth_number=None,
+            body_part=None,
+            created_at=self.get_current_datetime(),
+            created_by="SIMULATION",
+        )
+
+        return claim, claim_line
 
     def _get_rejection_reason_id(self, denial_reason: DenialReason) -> int:
         """
