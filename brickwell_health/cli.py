@@ -298,5 +298,89 @@ def status(ctx):
         sys.exit(1)
 
 
+@main.command("process-surveys")
+@click.option(
+    "--batch-size",
+    type=int,
+    default=None,
+    help="Number of surveys per batch (default: from config)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be processed without making changes",
+)
+@click.pass_context
+def process_surveys(ctx, batch_size, dry_run):
+    """Process pending surveys with LLM.
+    
+    This command processes pending NPS and CSAT surveys using Databricks ai_query
+    to generate realistic survey responses based on member context.
+    
+    It can be used to:
+    - Manually trigger LLM processing after simulation
+    - Retry failed surveys
+    - Process surveys when llm.process_after_simulation is false
+    
+    Examples:
+    
+    \b
+    # Process all pending surveys
+    brickwell process-surveys
+    
+    \b
+    # Dry run to see what would be processed
+    brickwell process-surveys --dry-run
+    
+    \b
+    # Process with custom batch size
+    brickwell process-surveys --batch-size 100
+    """
+    from brickwell_health.core.llm_processor import LLMSurveyProcessor
+
+    config_path = ctx.obj.get("config_path")
+
+    try:
+        config = load_config(config_path)
+
+        # Override batch size if specified
+        if batch_size is not None:
+            config.llm.batch_size = batch_size
+
+        # Check if LLM is configured
+        if not config.llm.databricks.is_configured():
+            click.echo(
+                "Error: Databricks credentials not configured. "
+                "Set llm.databricks.host, llm.databricks.token, and llm.databricks.http_path "
+                "in config or via environment variables.",
+                err=True,
+            )
+            sys.exit(1)
+
+        click.echo("Processing pending surveys...")
+        click.echo(f"  Databricks host: {config.llm.databricks.host}")
+        click.echo(f"  LLM model: {config.llm.model}")
+        click.echo(f"  Batch size: {config.llm.batch_size}")
+        if dry_run:
+            click.echo("  Mode: DRY RUN (no changes will be made)")
+
+        processor = LLMSurveyProcessor(config, dry_run=dry_run)
+        stats = processor.process_all()
+
+        # Print summary
+        click.echo("\n=== Processing Complete ===")
+        click.echo(f"NPS surveys processed: {stats['nps_processed']}")
+        click.echo(f"NPS surveys responded: {stats['nps_responded']}")
+        click.echo(f"CSAT surveys processed: {stats['csat_processed']}")
+        click.echo(f"CSAT surveys responded: {stats['csat_responded']}")
+        click.echo(f"LLM batch calls: {stats['llm_calls']}")
+        click.echo(f"Errors: {stats['errors']}")
+
+    except Exception as e:
+        logger.exception("process_surveys_failed", error=str(e))
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

@@ -110,6 +110,22 @@ def validate_config(config: SimulationConfig) -> list[str]:
             "This may result in unstable simulation behavior."
         )
 
+    # Validate LLM configuration
+    if config.llm.enabled:
+        if not config.llm.databricks.is_configured():
+            missing = []
+            if not config.llm.databricks.host:
+                missing.append("host")
+            if not config.llm.databricks.token:
+                missing.append("token")
+            if not config.llm.databricks.http_path:
+                missing.append("http_path")
+            errors.append(
+                f"LLM is enabled but Databricks credentials are missing: {', '.join(missing)}. "
+                "Set llm.databricks.host, llm.databricks.token, and llm.databricks.http_path "
+                "in config or via environment variables (DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_HTTP_PATH)."
+            )
+
     # Log warnings
     for warning in warnings:
         logger.warning("config_validation_warning", message=warning)

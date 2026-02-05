@@ -105,6 +105,9 @@ class ParallelRunner:
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
 
+        # Process pending surveys with LLM (if enabled)
+        self._process_llm_surveys()
+
         logger.info(
             "parallel_run_completed",
             elapsed_seconds=f"{elapsed:.1f}",
@@ -155,6 +158,9 @@ class ParallelRunner:
 
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
+
+        # Process pending surveys with LLM (if enabled)
+        self._process_llm_surveys()
 
         logger.info(
             "sequential_run_completed",
@@ -387,10 +393,19 @@ class ParallelRunner:
                       LEFT JOIN interaction_summaries int_sum ON int_sum.pending_id = s.pending_id
                       LEFT JOIN trigger_claim_details tc ON tc.pending_id = s.pending_id
                       LEFT JOIN trigger_interaction_details ti ON ti.pending_id = s.pending_id
+                    ),
+                    -- Assign processing_order per member for longitudinal processing
+                    survey_ordering AS (
+                      SELECT 
+                        pending_id,
+                        ROW_NUMBER() OVER (PARTITION BY member_id ORDER BY sent_datetime) AS proc_order
+                      FROM surveys
                     )
                     UPDATE nps_survey_pending s
-                    SET llm_context = ec.enriched_context
+                    SET llm_context = ec.enriched_context,
+                        processing_order = so.proc_order
                     FROM enriched_contexts ec
+                    JOIN survey_ordering so ON so.pending_id = ec.pending_id
                     WHERE s.pending_id = ec.pending_id
                 """)
 
@@ -410,3 +425,50 @@ class ParallelRunner:
                 exc_info=True,
             )
             # Don't raise - enrichment failure shouldn't fail the simulation
+
+    def _process_llm_surveys(self) -> None:
+        """
+        Process pending surveys with LLM.
+
+        This runs after survey context enrichment to generate realistic
+        survey responses using Databricks ai_query.
+
+        Only runs if llm.enabled and llm.process_after_simulation are True.
+        Failures are logged but don't fail the simulation.
+        """
+        if not self.config.llm.enabled:
+            logger.debug("llm_processing_skipped", reason="llm.enabled=false")
+            return
+
+        if not self.config.llm.process_after_simulation:
+            logger.info(
+                "llm_processing_skipped",
+                reason="llm.process_after_simulation=false",
+            )
+            return
+
+        logger.info("llm_survey_processing_starting")
+
+        try:
+            from brickwell_health.core.llm_processor import LLMSurveyProcessor
+
+            processor = LLMSurveyProcessor(self.config)
+            stats = processor.process_all()
+
+            logger.info(
+                "llm_survey_processing_completed",
+                nps_processed=stats["nps_processed"],
+                nps_responded=stats["nps_responded"],
+                csat_processed=stats["csat_processed"],
+                csat_responded=stats["csat_responded"],
+                llm_calls=stats["llm_calls"],
+                errors=stats["errors"],
+            )
+
+        except Exception as e:
+            logger.error(
+                "llm_survey_processing_failed",
+                error=str(e),
+                exc_info=True,
+            )
+            # Don't raise - LLM failure shouldn't fail the simulation

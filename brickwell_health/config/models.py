@@ -801,19 +801,63 @@ class SurveyConfig(BaseModel):
     csat: dict = Field(default_factory=dict, description="CSAT survey configuration")
 
 
+class DatabricksConfig(BaseModel):
+    """Databricks connection configuration for LLM processing."""
+
+    host: str = Field(default="", description="Databricks workspace URL")
+    token: str = Field(default="", description="Databricks access token")
+    http_path: str = Field(default="", description="SQL warehouse HTTP path")
+
+    def is_configured(self) -> bool:
+        """Check if all required Databricks credentials are provided."""
+        return bool(self.host and self.token and self.http_path)
+
+
 class LLMConfig(BaseModel):
     """LLM configuration for AI-generated survey responses and text."""
 
-    model: str = Field(default="databricks-qwen3-next-80b-a3b-instruct", description="LLM model identifier")
+    # Enable/disable LLM processing
+    enabled: bool = Field(default=False, description="Enable LLM processing")
+    process_after_simulation: bool = Field(
+        default=True, description="Auto-process surveys after simulation completes"
+    )
+
+    # Databricks connection
+    databricks: DatabricksConfig = Field(
+        default_factory=DatabricksConfig, description="Databricks connection settings"
+    )
+
+    # LLM model settings
+    model: str = Field(
+        default="databricks-qwen3-next-80b-a3b-instruct", description="LLM model identifier"
+    )
+    batch_size: int = Field(
+        default=50, ge=1, le=200, description="Number of surveys per batch query"
+    )
+    max_retries: int = Field(default=3, ge=0, description="Maximum retry attempts for failed surveys")
+
+    # Context limits
     max_claims_history: int = Field(default=5, description="Maximum claims to include in context")
-    max_interaction_history: int = Field(default=3, description="Maximum interactions to include in context")
+    max_interaction_history: int = Field(
+        default=3, description="Maximum interactions to include in context"
+    )
     claims_history_months: int = Field(default=12, description="Months of claims history")
     interaction_history_months: int = Field(default=6, description="Months of interaction history")
-    max_prior_nps_surveys: int = Field(default=3, description="Maximum prior NPS surveys in context")
+    max_prior_nps_surveys: int = Field(
+        default=3, description="Maximum prior NPS surveys in context"
+    )
     max_prior_complaints: int = Field(default=2, description="Maximum prior complaints in context")
     feedback_summary_length: int = Field(default=200, description="Maximum feedback summary length")
-    enforce_score_consistency: bool = Field(default=True, description="Enforce score consistency validation")
-    max_driver_nps_deviation: int = Field(default=3, description="Maximum NPS deviation from drivers")
+
+    # Validation settings
+    enforce_score_consistency: bool = Field(
+        default=True, description="Enforce score consistency validation"
+    )
+    max_driver_nps_deviation: int = Field(
+        default=3, description="Maximum NPS deviation from drivers"
+    )
+
+    # Prompt templates
     prompts: dict = Field(default_factory=dict, description="LLM prompt templates")
 
 

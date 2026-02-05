@@ -425,13 +425,28 @@ survey:
 
 # LLM Configuration (for deferred post-simulation processing)
 # See docs/NBA_DATA_SIMULATION_SPEC.md for full details
-# See scripts/test_nps_ai_query.py for reference implementation
 llm:
+  # Enable LLM processing (set to true to enable)
+  enabled: true
+  
+  # Auto-process surveys after simulation completes
+  process_after_simulation: true
+  
+  # Databricks connection settings
+  databricks:
+    host: "<DATABRICKS_HOST>"
+    token: "<DATABRICKS_TOKEN>"
+    http_path: "<DATABRICKS_HTTP_PATH>"
+  
   # Model for Databricks ai_query (tested models)
   # - databricks-claude-haiku-4-5: Fast, clean output, harsher NPS scores
   # - databricks-gpt-5-2: Balanced, moderate NPS scores
   # - databricks-qwen3-next-80b-a3b-instruct: Fast, emotional verbatim, clean JSON
   model: "databricks-qwen3-next-80b-a3b-instruct"
+  
+  # Batch processing settings
+  batch_size: 50
+  max_retries: 3
   
   # Context limits (for building llm_context JSON during simulation)
   max_claims_history: 5
@@ -448,44 +463,71 @@ llm:
   enforce_score_consistency: true
   max_driver_nps_deviation: 3
   
-  
   # Prompt Templates
   # Use {placeholder} for dynamic values injected at runtime
   # Available: {member_context}, {prior_surveys_section}
   prompts:
     nps_survey: |
       Generate a realistic NPS survey response as JSON for an Australian private health insurance member.
-      
+
       === MEMBER CONTEXT ===
       {member_context}
-      
+
       {prior_surveys_section}
+
+      === ANALYSIS GUIDELINES ===
+      Analyze the context to determine sentiment. Key factors to consider:
+
+      1. CURRENT TRIGGER EVENT (highest impact)
+         - Claim rejection → Strong negative (-3 to -5 NPS impact)
+         - Claim paid quickly → Positive (+1 to +2)
+         - High gap amount → Moderate negative
+         - Fast processing → Slight positive
+
+      2. CLAIMS HISTORY PATTERNS
+         - High rejection rate (rejected/total) → Compounding frustration
+         - Multiple rejection reasons → Confusion about coverage
+         - Benefit limits hit → Value concerns
+         - Low average processing days → Positive efficiency signal
+
+      3. FINANCIAL STRESS SIGNALS
+         - Failed payments → Financial pressure, may blame insurer
+         - Currently in arrears → High stress
+         - High LHC loading → "Penalty" perception, lower value
+         - Recent premium increase > 5% → Cost concerns
+
+      4. SERVICE EXPERIENCE
+         - Low FCR rate (< 50%) → Frustration with resolution
+         - High average wait time (> 10 min) → Service complaints
+         - Unresolved issues > 0 → Ongoing frustration
+
+      5. DIGITAL SIGNALS (intent indicators)
+         - viewed_cancel_page = true → HIGH churn risk, likely Detractor
+         - High engagement but poor claims → "Trying to leave" signal
+
+      6. COMPLAINT HISTORY
+         - Any open complaints → Strong negative
+         - PHIO escalations → Severe dissatisfaction
+
+      7. PRIOR SURVEYS (if provided)
+         - Trajectory: improving, stable, or declining?
+         - Prior Detractor still having issues → likely still Detractor
+         - Prior Detractor with resolved issues → may improve
       
-      === PATTERN ANALYSIS INSTRUCTIONS ===
-      Analyze the claim_history and current_claim to identify patterns:
-      
-      1. SAME SERVICE TYPE, DIFFERENT OUTCOME
-         - Was this service type previously rejected but now approved? → Positive turnaround, improved sentiment
-         - Was this service type previously approved but now rejected? → Negative surprise, worse sentiment
-      
-      2. REPEATED ISSUES
-         - Multiple rejections for same/different services? → Compounding frustration
-         - Pattern of slow processing? → Eroding trust
-      
-      3. SERVICE RECOVERY
-         - Did member call to complain? Was it resolved? → Affects sentiment trajectory
-      
-      4. OVERALL TRAJECTORY
-         - Are recent claims better or worse than older claims?
-         - Consider billing issues, digital engagement, premium increases
-      
-      === SCORING GUIDELINES ===
-      - Australian health insurance NPS is typically low (industry avg 0-30)
-      - Claim rejection is the strongest negative driver (-3 to -5 on NPS)
-      - Same type rejection→approval = cautious positive (+2 to +3)
-      - Driver scores should correlate with NPS (within ±3 points typically)
-      - Detractors (0-6) more likely to consent to follow-up (60%)
-      
+      === SCORING CALIBRATION ===
+      Australian PHI NPS benchmarks:
+      - Industry average: +5 to +15 (low compared to other industries)
+      - Top performers: +25 to +35
+      - After claim rejection: typically 0-4 (Detractor)
+      - After smooth claim payment: typically 6-8 (Passive to Promoter)
+
+      Driver scores should correlate with NPS (within ±3 points typically):
+      - Claims Processing: Based on processing days, rejection rate
+      - Customer Service: Based on FCR rate, wait times, unresolved issues
+      - Value for Money: Based on benefit ratio, LHC, premium increase
+      - Coverage Clarity: Based on rejection reasons, benefit limits hit
+      - Digital Experience: Based on online claims success, engagement level
+
       === OUTPUT FORMAT ===
       Respond with ONLY valid JSON (no markdown, no explanation):
       {{
@@ -495,8 +537,8 @@ llm:
           "driver_value_for_money": <0-10>,
           "driver_coverage_clarity": <0-10>,
           "driver_digital_experience": <0-10>,
-          "feedback_text": "<1-3 sentences in Australian English referencing specific experiences>",
-          "feedback_improvement": "<suggestion or null>",
+          "feedback_text": "<1-3 sentences in Australian English, reference specific issues from context>",
+          "feedback_improvement": "<specific suggestion based on their experience, or null>",
           "sentiment_score": <-1.0 to 1.0>,
           "sentiment_label": "<Positive|Neutral|Negative>",
           "feedback_themes": ["<theme1>", "<theme2>"],
@@ -562,33 +604,24 @@ llm:
       }}
     
     csat_survey: |
-      Generate a realistic CSAT survey response as JSON for an Australian private health insurance member following a customer service interaction.
-      
-      === MEMBER CONTEXT ===
-      {member_context}
-      
+      Generate a realistic CSAT survey response as JSON for an Australian private health insurance member.
+
       === INTERACTION CONTEXT ===
-      - Interaction Type: {interaction_type}
-      - Channel: {channel}
-      - Wait Time: {wait_time_minutes} minutes
-      - Duration: {duration_minutes} minutes
-      - First Contact Resolution: {fcr}
-      - Related To: {related_context}
-      
+      {interaction_context}
+
       === SCORING GUIDELINES ===
-      - CSAT (1-5): 1=Very Dissatisfied, 5=Very Satisfied
-      - Effort Score (1-5): 1=Very Easy, 5=Very Difficult
-      - Long wait times (>10 min) negatively impact scores
-      - FCR=False typically reduces satisfaction by 1-2 points
-      - Consider member's overall history and sentiment
-      
+      - CSAT scores 1-5 (Very Dissatisfied to Very Satisfied)
+      - Effort scores 1-5 (Very High Effort to Very Low Effort)
+      - First contact resolution strongly influences satisfaction
+      - Long wait times reduce scores significantly
+
       === OUTPUT FORMAT ===
-      Respond with ONLY valid JSON:
+      Respond with ONLY valid JSON (no markdown, no explanation):
       {{
-          "satisfaction_score": <1-5>,
+          "csat_score": <1-5>,
           "effort_score": <1-5>,
           "recommend_agent": <true|false>,
-          "feedback_text": "<1-2 sentences about the interaction>",
+          "feedback_text": "<1-2 sentences in Australian English>",
           "sentiment_label": "<Positive|Neutral|Negative>"
       }}
 
