@@ -210,6 +210,73 @@ class CommunicationProcess(BaseProcess):
 
             if event_type == "interaction_completed":
                 self._send_transactional_communication(event)
+            elif event_type == "nba_communication":
+                self._send_nba_communication(event)
+
+    def _send_nba_communication(self, event: dict) -> None:
+        """
+        Send communication for NBA action (Email/SMS/InApp).
+
+        Called when NBAActionProcess emits an 'nba_communication' event
+        for non-Phone channel NBA actions.
+
+        Args:
+            event: Event dictionary with member_id, policy_id, channel, details
+        """
+        member_id = event.get("member_id")
+        policy_id = event.get("policy_id")
+        channel = event.get("channel")  # Email, SMS, InApp
+        details = event.get("details", {})
+        action_category = details.get("action_category", "Service")
+
+        if not member_id or not policy_id:
+            return
+
+        # Map action category to template code
+        template_map = {
+            "Retention": "nba_retention_offer",
+            "Upsell": "nba_upgrade_offer",
+            "CrossSell": "nba_addon_offer",
+            "Service": "nba_service_outreach",
+            "Wellness": "nba_wellness_reminder",
+        }
+        template_code = template_map.get(action_category, "nba_general")
+
+        # Check communication preferences based on channel
+        # NBA communications are considered marketing-type for opt-in purposes
+        channel_lower = channel.lower() if channel else "email"
+        if channel_lower in ("email", "sms"):
+            if not self._is_opted_in(member_id, PreferenceType.MARKETING, channel_lower.capitalize()):
+                self._stats["nba_suppressed_opt_out"] = self._stats.get(
+                    "nba_suppressed_opt_out", 0
+                ) + 1
+                return
+
+        # Generate communication
+        communication = self.communication_gen.generate(
+            policy_id=policy_id,
+            member_id=member_id,
+            template_code=template_code,
+            trigger_event_type=None,  # NBA-driven, not event-triggered
+        )
+
+        # Write to batch
+        self.batch_writer.add("communication", communication.model_dump_db())
+        self._stats["nba_communications_sent"] = self._stats.get(
+            "nba_communications_sent", 0
+        ) + 1
+
+        # Track for fatigue (treat as marketing)
+        self._track_communication(member_id, communication, is_marketing=True)
+
+        logger.debug(
+            "nba_communication_sent",
+            communication_id=str(communication.communication_id),
+            member_id=str(member_id),
+            channel=channel,
+            action_code=details.get("action_code"),
+            template_code=template_code,
+        )
 
     def _send_transactional_communication(self, event: dict) -> None:
         """Send a transactional communication based on a trigger event."""

@@ -126,6 +126,37 @@ class SharedState:
     # }
     pending_campaign_responses: dict[UUID, dict[str, Any]] = field(default_factory=dict)
 
+    # =========================================================================
+    # NBA (Next Best Action) Domain Fields
+    # =========================================================================
+
+    # NBA Action Queue: pending recommendations to be executed (FIFO)
+    # Used by: NBAProcess (consumer), loaded from nba_action_recommendation table
+    # Structure: NBAActionWithRecommendation domain objects
+    nba_action_queue: deque[Any] = field(default_factory=deque)
+
+    # NBA Execution History: tracks recent executions per member for cooldown checks
+    # Key: member_id -> list of execution records
+    # Structure: {
+    #     "action_id": UUID,
+    #     "action_code": str,
+    #     "action_category": str,
+    #     "executed_at": datetime,
+    #     "execution_channel": str,
+    # }
+    nba_execution_history: dict[UUID, list[dict[str, Any]]] = field(default_factory=dict)
+
+    # NBA Active Effects: tracks active behavioral modifications from executed actions
+    # Key: policy_id -> list of active effect records
+    # Structure: {
+    #     "effect_type": str,  # "retention_boost", "upsell_multiplier", etc.
+    #     "value": float,
+    #     "expires_at": datetime,
+    #     "source_action_id": UUID,
+    #     "source_recommendation_id": UUID,
+    # }
+    nba_active_effects: dict[UUID, list[dict[str, Any]]] = field(default_factory=dict)
+
     def add_policy(
         self,
         policy_id: UUID,
@@ -249,6 +280,9 @@ class SharedState:
             "members_with_preferences": len(self.communication_preferences),
             "members_with_engagement_level": len(self.member_engagement_levels),
             "pending_campaign_responses": len(self.pending_campaign_responses),
+            "nba_action_queue": len(self.nba_action_queue),
+            "members_with_nba_execution_history": len(self.nba_execution_history),
+            "policies_with_nba_effects": len(self.nba_active_effects),
         }
 
     def add_member_change_event(
@@ -680,3 +714,310 @@ class SharedState:
             response_id: The campaign_response UUID
         """
         self.pending_campaign_responses.pop(response_id, None)
+
+    # =========================================================================
+    # NBA Action Queue Methods
+    # =========================================================================
+
+    def add_nba_recommendation(self, recommendation: Any) -> None:
+        """
+        Add an NBA recommendation to the action queue.
+
+        Called during worker initialization to populate from database.
+
+        Args:
+            recommendation: NBAActionWithRecommendation object
+        """
+        self.nba_action_queue.append(recommendation)
+
+    def add_nba_recommendations(self, recommendations: list[Any]) -> None:
+        """
+        Add multiple NBA recommendations to the action queue.
+
+        Args:
+            recommendations: List of NBAActionWithRecommendation objects
+        """
+        self.nba_action_queue.extend(recommendations)
+
+    def get_nba_recommendations(
+        self, max_items: int | None = None
+    ) -> list[Any]:
+        """
+        Get and remove NBA recommendations from the queue (FIFO).
+
+        Called by NBAProcess to consume recommendations.
+
+        Args:
+            max_items: Maximum number of recommendations to return (None = all)
+
+        Returns:
+            List of NBAActionWithRecommendation objects in FIFO order
+        """
+        items = []
+        count = 0
+        while self.nba_action_queue and (max_items is None or count < max_items):
+            items.append(self.nba_action_queue.popleft())
+            count += 1
+        return items
+
+    def peek_nba_recommendations(self) -> list[Any]:
+        """Peek at NBA recommendations without removing them."""
+        return list(self.nba_action_queue)
+
+    def get_nba_recommendations_for_member(
+        self, member_id: UUID, max_items: int | None = None
+    ) -> list[Any]:
+        """
+        Get NBA recommendations for a specific member without removing them.
+
+        Used for targeted action retrieval.
+
+        Args:
+            member_id: The member UUID to filter by
+            max_items: Maximum number of items to return
+
+        Returns:
+            List of NBAActionWithRecommendation objects for the member
+        """
+        items = [
+            r for r in self.nba_action_queue
+            if r.member_id == member_id
+        ]
+        if max_items:
+            items = items[:max_items]
+        return items
+
+    # =========================================================================
+    # NBA Execution History Methods
+    # =========================================================================
+
+    def add_nba_execution(
+        self,
+        member_id: UUID,
+        execution_data: dict[str, Any],
+    ) -> None:
+        """
+        Record an NBA action execution for cooldown tracking.
+
+        Called by NBAProcess after executing an action.
+
+        Args:
+            member_id: The member UUID
+            execution_data: Execution details including action_id, category, timestamp
+        """
+        if member_id not in self.nba_execution_history:
+            self.nba_execution_history[member_id] = []
+        self.nba_execution_history[member_id].append(execution_data)
+
+        # Keep only last 50 executions per member (for memory efficiency)
+        if len(self.nba_execution_history[member_id]) > 50:
+            self.nba_execution_history[member_id] = \
+                self.nba_execution_history[member_id][-50:]
+
+    def get_recent_nba_executions(
+        self,
+        member_id: UUID,
+        days: int = 30,
+        current_datetime: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get recent NBA executions for a member within specified days.
+
+        Used for cooldown checks.
+
+        Args:
+            member_id: The member UUID
+            days: Number of days to look back
+            current_datetime: Reference datetime (defaults to now)
+
+        Returns:
+            List of execution records
+        """
+        if current_datetime is None:
+            current_datetime = datetime.now()
+        cutoff = current_datetime - timedelta(days=days)
+
+        executions = self.nba_execution_history.get(member_id, [])
+        return [
+            e for e in executions
+            if e.get("executed_at", datetime.min) > cutoff
+        ]
+
+    def check_nba_cooldown(
+        self,
+        member_id: UUID,
+        action_id: UUID | None = None,
+        action_category: str | None = None,
+        same_action_cooldown_days: int = 30,
+        same_category_cooldown_days: int = 7,
+        current_datetime: datetime | None = None,
+    ) -> tuple[bool, str | None]:
+        """
+        Check if an NBA action is blocked by cooldown rules.
+
+        Args:
+            member_id: The member UUID
+            action_id: Specific action to check (for same-action cooldown)
+            action_category: Action category to check (for same-category cooldown)
+            same_action_cooldown_days: Days before same action can be repeated
+            same_category_cooldown_days: Days before same category can be repeated
+            current_datetime: Reference datetime (defaults to now)
+
+        Returns:
+            Tuple of (is_blocked, reason)
+            is_blocked: True if action should be blocked
+            reason: String explaining why blocked, or None if not blocked
+        """
+        if current_datetime is None:
+            current_datetime = datetime.now()
+
+        # Check same-action cooldown
+        if action_id:
+            action_cutoff = current_datetime - timedelta(days=same_action_cooldown_days)
+            for exec_data in self.nba_execution_history.get(member_id, []):
+                if (
+                    exec_data.get("action_id") == action_id
+                    and exec_data.get("executed_at", datetime.min) > action_cutoff
+                ):
+                    return True, f"Same action cooldown ({same_action_cooldown_days} days)"
+
+        # Check same-category cooldown
+        if action_category:
+            category_cutoff = current_datetime - timedelta(days=same_category_cooldown_days)
+            for exec_data in self.nba_execution_history.get(member_id, []):
+                if (
+                    exec_data.get("action_category") == action_category
+                    and exec_data.get("executed_at", datetime.min) > category_cutoff
+                ):
+                    return True, f"Same category cooldown ({same_category_cooldown_days} days)"
+
+        return False, None
+
+    # =========================================================================
+    # NBA Active Effects Methods
+    # =========================================================================
+
+    def add_nba_effect(
+        self,
+        policy_id: UUID,
+        effect_data: dict[str, Any],
+    ) -> None:
+        """
+        Add an active NBA behavioral effect for a policy.
+
+        Called by NBAProcess after successful action execution.
+
+        Args:
+            policy_id: The policy UUID
+            effect_data: Effect details including type, value, expiry
+        """
+        if policy_id not in self.nba_active_effects:
+            self.nba_active_effects[policy_id] = []
+        self.nba_active_effects[policy_id].append(effect_data)
+
+    def get_active_nba_effects(
+        self,
+        policy_id: UUID,
+        effect_type: str | None = None,
+        current_datetime: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get active NBA effects for a policy, optionally filtered by type.
+
+        Automatically filters out expired effects.
+
+        Args:
+            policy_id: The policy UUID
+            effect_type: Optional filter for specific effect type
+            current_datetime: Reference datetime (defaults to now)
+
+        Returns:
+            List of active effect records
+        """
+        if current_datetime is None:
+            current_datetime = datetime.now()
+
+        effects = self.nba_active_effects.get(policy_id, [])
+
+        # Filter out expired effects
+        active = [
+            e for e in effects
+            if e.get("expires_at", datetime.max) > current_datetime
+        ]
+
+        # Update the stored list to remove expired
+        if len(active) != len(effects):
+            self.nba_active_effects[policy_id] = active
+
+        # Filter by type if requested
+        if effect_type:
+            active = [e for e in active if e.get("effect_type") == effect_type]
+
+        return active
+
+    def get_nba_effect_multiplier(
+        self,
+        policy_id: UUID,
+        effect_type: str,
+        default: float = 1.0,
+        current_datetime: datetime | None = None,
+    ) -> float:
+        """
+        Get the combined multiplier for a specific effect type.
+
+        Multiple effects of the same type are multiplied together.
+
+        Args:
+            policy_id: The policy UUID
+            effect_type: The effect type to look for
+            default: Default value if no effects found
+            current_datetime: Reference datetime
+
+        Returns:
+            Combined multiplier value
+        """
+        effects = self.get_active_nba_effects(
+            policy_id, effect_type, current_datetime
+        )
+        if not effects:
+            return default
+
+        multiplier = 1.0
+        for effect in effects:
+            multiplier *= effect.get("value", 1.0)
+        return multiplier
+
+    def expire_nba_effects(
+        self,
+        current_datetime: datetime | None = None,
+    ) -> int:
+        """
+        Remove all expired NBA effects across all policies.
+
+        Called periodically to clean up memory.
+
+        Args:
+            current_datetime: Reference datetime (defaults to now)
+
+        Returns:
+            Number of effects removed
+        """
+        if current_datetime is None:
+            current_datetime = datetime.now()
+
+        total_removed = 0
+        for policy_id in list(self.nba_active_effects.keys()):
+            effects = self.nba_active_effects[policy_id]
+            active = [
+                e for e in effects
+                if e.get("expires_at", datetime.max) > current_datetime
+            ]
+            removed = len(effects) - len(active)
+            total_removed += removed
+
+            if active:
+                self.nba_active_effects[policy_id] = active
+            else:
+                del self.nba_active_effects[policy_id]
+
+        return total_removed

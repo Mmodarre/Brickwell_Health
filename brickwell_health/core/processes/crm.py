@@ -19,6 +19,7 @@ from brickwell_health.domain.enums import (
     CasePriority,
     CaseStatus,
     ComplaintStatus,
+    InteractionChannel,
     TriggerEventType,
 )
 from brickwell_health.generators.crm_generator import (
@@ -214,6 +215,11 @@ class CRMProcess(BaseProcess):
                 self._check_journey_completion(event, current_date)
                 # Continue to process for other purposes (e.g., CSAT survey triggers)
 
+            # Handle NBA outbound call events - create proactive interaction
+            elif event_type == "nba_outbound_call":
+                self._create_nba_outbound_interaction(event, current_date)
+                continue  # Skip normal trigger processing for NBA events
+
             # Get context for trigger evaluation
             context = {
                 "charge_amount": event.get("charge_amount", 0),
@@ -286,6 +292,62 @@ class CRMProcess(BaseProcess):
                 invoice_id=event.get("invoice_id"),
                 charge_amount=context.get("charge_amount"),
             )
+
+    def _create_nba_outbound_interaction(
+        self, event: dict, current_date: date
+    ) -> None:
+        """
+        Create outbound phone interaction for NBA action.
+
+        Called when NBAActionProcess emits an 'nba_outbound_call' event
+        for Phone channel NBA actions.
+
+        Args:
+            event: Event dictionary with member_id, policy_id, details
+            current_date: Current simulation date
+        """
+        member_id = event.get("member_id")
+        policy_id = event.get("policy_id")
+        details = event.get("details", {})
+
+        if not member_id or not policy_id:
+            return
+
+        # Use existing generate() method with outbound call type
+        # Use "outbound_proactive" interaction type for NBA calls
+        interaction = self.interaction_gen.generate(
+            policy_id=policy_id,
+            member_id=member_id,
+            interaction_type_code="outbound_proactive",
+            channel=InteractionChannel.PHONE,
+            trigger_event_type=None,  # NBA-driven, not event-triggered
+        )
+
+        # Write to batch
+        self.batch_writer.add("interaction", interaction.model_dump_db())
+        self._stats["interactions_created"] += 1
+        self._stats["nba_interactions_created"] = self._stats.get(
+            "nba_interactions_created", 0
+        ) + 1
+
+        # Emit completion event for downstream (surveys, CSAT triggers, etc.)
+        if self.shared_state:
+            self.shared_state.add_crm_event({
+                "event_type": "interaction_completed",
+                "interaction_id": interaction.interaction_id,
+                "policy_id": policy_id,
+                "member_id": member_id,
+                "nba_recommendation_id": details.get("recommendation_id"),
+                "fcr": interaction.first_contact_resolution,
+                "timestamp": self.sim_env.current_datetime,
+            })
+
+        logger.debug(
+            "nba_outbound_interaction_created",
+            interaction_id=str(interaction.interaction_id),
+            member_id=str(member_id),
+            action_code=details.get("action_code"),
+        )
 
     # =========================================================================
     # Journey Lifecycle Methods

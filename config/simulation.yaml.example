@@ -650,3 +650,75 @@ event_triggers:
     case: 0.30
     nps_survey: 0.20
     csat_survey: 0.40
+
+
+# =============================================================================
+# NBA (Next Best Action) Configuration
+# =============================================================================
+# NBA enables the simulation to consume action recommendations from an external
+# NBA engine. The engine writes recommendations to nba_action_recommendation,
+# and the simulation executes them and records outcomes.
+nba:
+  # Enable/disable NBA processing
+  enabled: true
+
+  # Response model parameters
+  response:
+    # Base response probability by channel (engagement rates)
+    channel_effectiveness:
+      Email: 0.15
+      SMS: 0.25
+      Phone: 0.45
+      InApp: 0.35
+      Letter: 0.08
+      Web: 0.40
+
+    # Conversion rate given engagement, by action category
+    conversion_rates:
+      Retention: 0.35
+      Upsell: 0.12
+      CrossSell: 0.08
+      Service: 0.65
+      Wellness: 0.25
+
+    # Churn probability multiplier for retention actions (0.4 = 60% reduction)
+    retention_churn_reduction: 0.4
+
+    # Upgrade probability multiplier for upsell actions
+    upsell_upgrade_multiplier: 3.0
+
+    # Multipliers based on member state
+    state_modifiers:
+      churn_signal_boost: 1.5
+      arrears_upsell_penalty: 0.3
+      high_engagement_boost: 1.4
+      recent_complaint_penalty: 0.7
+      recent_claim_rejection_boost: 1.5
+
+    # How long behavioral effects last after action execution (in days)
+    effect_duration_days: 30
+
+  # Contact frequency limits
+  contact_policy:
+    # Per-channel daily limits
+    max_email_per_day: 1
+    max_sms_per_day: 1
+    max_phone_per_day: 1
+    max_inapp_per_day: 2
+
+    # Per-channel weekly limits
+    max_email_per_week: 3
+    max_sms_per_week: 2
+    max_phone_per_week: 2
+    max_inapp_per_week: 5
+
+    # Cross-channel limits
+    max_total_per_day: 2
+    max_total_per_week: 4
+
+    # Suppression periods (days)
+    same_action_cooldown_days: 30
+    same_category_cooldown_days: 7
+
+  # Maximum outbound actions per member per day
+  max_actions_per_member_per_day: 1

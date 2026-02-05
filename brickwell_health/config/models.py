@@ -874,6 +874,117 @@ class EventTriggersConfig(BaseModel):
     interaction_completed: dict = Field(default_factory=dict, description="Triggers on interaction completion")
 
 
+class NBAResponseConfig(BaseModel):
+    """Response model parameters for NBA actions."""
+
+    # Channel effectiveness (base engagement rates)
+    channel_effectiveness: dict[str, float] = Field(
+        default={
+            "Email": 0.15,
+            "SMS": 0.25,
+            "Phone": 0.45,
+            "InApp": 0.35,
+            "Letter": 0.08,
+            "Web": 0.40,
+        },
+        description="Base response probability by channel",
+    )
+
+    # Conversion rates given engagement
+    conversion_rates: dict[str, float] = Field(
+        default={
+            "Retention": 0.35,
+            "Upsell": 0.12,
+            "CrossSell": 0.08,
+            "Service": 0.65,
+            "Wellness": 0.25,
+        },
+        description="Conversion rate given engagement, by action category",
+    )
+
+    # Probability modifiers for behavior
+    retention_churn_reduction: float = Field(
+        default=0.4,
+        ge=0.1,
+        le=0.9,
+        description="Churn probability multiplier for retention actions (0.4 = 60% reduction)",
+    )
+    upsell_upgrade_multiplier: float = Field(
+        default=3.0,
+        ge=1.5,
+        le=10.0,
+        description="Upgrade probability multiplier for upsell actions",
+    )
+
+    # State modifiers (how member state affects response)
+    state_modifiers: dict[str, float] = Field(
+        default={
+            "churn_signal_boost": 1.5,
+            "arrears_upsell_penalty": 0.3,
+            "high_engagement_boost": 1.4,
+            "recent_complaint_penalty": 0.7,
+            "recent_claim_rejection_boost": 1.5,
+        },
+        description="Multipliers based on member state",
+    )
+
+    # Effect duration
+    effect_duration_days: int = Field(
+        default=30,
+        ge=7,
+        le=180,
+        description="How long behavioral effects last after action execution (in days)",
+    )
+
+
+class NBAContactPolicyConfig(BaseModel):
+    """Contact frequency limits for NBA actions."""
+
+    # Per-channel daily limits
+    max_email_per_day: int = Field(default=1, ge=0)
+    max_sms_per_day: int = Field(default=1, ge=0)
+    max_phone_per_day: int = Field(default=1, ge=0)
+    max_inapp_per_day: int = Field(default=2, ge=0)
+
+    # Per-channel weekly limits
+    max_email_per_week: int = Field(default=3, ge=0)
+    max_sms_per_week: int = Field(default=2, ge=0)
+    max_phone_per_week: int = Field(default=2, ge=0)
+    max_inapp_per_week: int = Field(default=5, ge=0)
+
+    # Cross-channel limits
+    max_total_per_day: int = Field(default=2, ge=0)
+    max_total_per_week: int = Field(default=4, ge=0)
+
+    # Suppression periods
+    same_action_cooldown_days: int = Field(default=30, ge=7)
+    same_category_cooldown_days: int = Field(default=7, ge=1)
+
+
+class NBAConfig(BaseModel):
+    """NBA (Next Best Action) configuration."""
+
+    enabled: bool = Field(default=True, description="Enable NBA processing")
+
+    response: NBAResponseConfig = Field(
+        default_factory=NBAResponseConfig,
+        description="Response model parameters",
+    )
+
+    contact_policy: NBAContactPolicyConfig = Field(
+        default_factory=NBAContactPolicyConfig,
+        description="Contact frequency limits",
+    )
+
+    # Execution settings
+    max_actions_per_member_per_day: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description="Maximum outbound actions per member per day",
+    )
+
+
 class SimulationConfig(BaseSettings):
     """
     Root simulation configuration.
@@ -902,6 +1013,7 @@ class SimulationConfig(BaseSettings):
     survey: SurveyConfig = Field(default_factory=SurveyConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     event_triggers: EventTriggersConfig = Field(default_factory=EventTriggersConfig)
+    nba: NBAConfig = Field(default_factory=NBAConfig)
 
     reference_data_path: Path = Field(
         default=Path("data/reference"),

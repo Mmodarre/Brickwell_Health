@@ -28,6 +28,7 @@ SCHEMA_FILES = [
     "schema_communication.sql",
     "schema_digital.sql",
     "schema_survey.sql",
+    "schema_nba.sql",           # NBA action catalog, recommendations, executions (depends on member, policy, communication, crm)
     # System records (must be last - inserts placeholder data)
     "schema_system.sql",
 ]
@@ -95,6 +96,10 @@ def _execute_schema_files(engine) -> None:
 def _drop_all_tables(engine) -> None:
     """Drop all tables in reverse dependency order."""
     tables = [
+        # NBA Domain (depends on member, policy, communication, crm)
+        "nba_action_execution",
+        "nba_action_recommendation",
+        "nba_action_catalog",
         # Survey Domain
         "csat_survey",
         "csat_survey_pending",

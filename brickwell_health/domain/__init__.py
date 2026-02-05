@@ -48,6 +48,23 @@ from brickwell_health.domain.enums import (
     SurveyChannel,
     ProcessingStatus,
 )
+from brickwell_health.domain.nba import (
+    # NBA Domain Enums
+    BusinessIssue,
+    ActionCategory,
+    NBAChannel,
+    RecommendationStatus,
+    ImmediateResponse,
+    ExecutionMethod,
+    # NBA Domain Models
+    NBAActionCatalogCreate,
+    NBAActionCatalog,
+    NBARecommendationCreate,
+    NBARecommendation,
+    NBAExecutionCreate,
+    NBAExecution,
+    NBAActionWithRecommendation,
+)
 from brickwell_health.domain.member import MemberCreate, Member, MemberUpdate
 from brickwell_health.domain.policy import PolicyCreate, Policy, PolicyMemberCreate
 from brickwell_health.domain.application import (
@@ -209,4 +226,19 @@ __all__ = [
     "CSATSurveyPending",
     "CSATSurveyCreate",
     "CSATSurvey",
+    # NBA Domain Enums
+    "BusinessIssue",
+    "ActionCategory",
+    "NBAChannel",
+    "RecommendationStatus",
+    "ImmediateResponse",
+    "ExecutionMethod",
+    # NBA Domain Models
+    "NBAActionCatalogCreate",
+    "NBAActionCatalog",
+    "NBARecommendationCreate",
+    "NBARecommendation",
+    "NBAExecutionCreate",
+    "NBAExecution",
+    "NBAActionWithRecommendation",
 ]

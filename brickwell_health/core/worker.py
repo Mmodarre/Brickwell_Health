@@ -7,8 +7,10 @@ Supports both fresh runs and resume from checkpoint.
 
 import time
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Generator
+from uuid import UUID
 
 import numpy as np
 import structlog
@@ -48,8 +50,16 @@ from brickwell_health.core.processes.crm import CRMProcess
 from brickwell_health.core.processes.communication import CommunicationProcess
 from brickwell_health.core.processes.digital import DigitalBehaviorProcess
 from brickwell_health.core.processes.survey import SurveyProcess
+from brickwell_health.core.processes.nba import NBAActionProcess
 from brickwell_health.db.connection import create_engine_for_worker
 from brickwell_health.db.writer import BatchWriter
+from brickwell_health.domain.nba import (
+    NBAActionWithRecommendation,
+    BusinessIssue,
+    ActionCategory,
+    NBAChannel,
+    RecommendationStatus,
+)
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.reference.loader import ReferenceDataLoader
 
@@ -133,6 +143,7 @@ class SimulationWorker:
         self.communication: CommunicationProcess | None = None
         self.digital: DigitalBehaviorProcess | None = None
         self.survey: SurveyProcess | None = None
+        self.nba_process: NBAActionProcess | None = None
 
         # Checkpoint managers (v1 for legacy, v2 for incremental runs)
         checkpoint_dir = Path(config.reference_data_path).parent / "checkpoints"
@@ -337,6 +348,8 @@ class SimulationWorker:
             self.digital.start()
         if self.survey:
             self.survey.start()
+        if self.nba_process:
+            self.nba_process.start()
 
     def _restore_process_state(self, checkpoint: dict[str, Any]) -> None:
         """
@@ -481,6 +494,16 @@ class SimulationWorker:
                 shared_state=self.shared_state,
             )
 
+        # Load NBA recommendations and create NBA process if NBA is enabled
+        nba_config = getattr(self.config, "nba", None)
+        nba_enabled = nba_config.enabled if nba_config and hasattr(nba_config, "enabled") else True
+        if nba_enabled:
+            self._load_nba_recommendations()
+            self.nba_process = NBAActionProcess(
+                **common_args,
+                shared_state=self.shared_state,
+            )
+
     def _save_final_checkpoint(self) -> None:
         """Save final checkpoint at end of simulation for potential future resume."""
         if not self.shared_state or not self.sim_env:
@@ -525,6 +548,7 @@ class SimulationWorker:
             "communication_stats": self.communication.get_stats() if self.communication else {},
             "digital_stats": self.digital.get_stats() if self.digital else {},
             "survey_stats": self.survey.get_stats() if self.survey else {},
+            "nba_stats": self.nba_process.get_stats() if self.nba_process else {},
             "shared_state": self.shared_state.get_stats() if self.shared_state else {},
             "resume_mode": self.resume_mode,
         }
@@ -692,6 +716,149 @@ class SimulationWorker:
             self.survey = SurveyProcess(
                 **common_args,
                 shared_state=self.shared_state,
+            )
+
+        # Load NBA recommendations and create NBA process if NBA is enabled
+        nba_config = getattr(self.config, "nba", None)
+        nba_enabled = nba_config.enabled if nba_config and hasattr(nba_config, "enabled") else True
+        if nba_enabled:
+            self._load_nba_recommendations()
+            self.nba_process = NBAActionProcess(
+                **common_args,
+                shared_state=self.shared_state,
+            )
+
+    def _load_nba_recommendations(self, as_of_date: date | None = None) -> None:
+        """
+        Load pending NBA recommendations from database into shared state.
+
+        Queries the v_nba_pending_actions view for recommendations that:
+        - Are valid for the current simulation date
+        - Have status 'pending' or 'scheduled'
+        - Belong to members in this worker's partition
+
+        Args:
+            as_of_date: Date to filter recommendations by (defaults to simulation start/current date)
+        """
+        if not self.shared_state or not self.sim_env:
+            return
+
+        # Use provided date or current simulation date
+        filter_date = as_of_date or self.sim_env.current_date
+
+        # Query pending recommendations for this worker's partition
+        # Uses the v_nba_pending_actions view which joins catalog and recommendations
+        query = """
+            SELECT 
+                r.recommendation_id,
+                r.batch_id,
+                r.batch_date,
+                r.member_id,
+                r.policy_id,
+                r.action_id,
+                r.propensity_score,
+                r.urgency_score,
+                r.business_value_score,
+                r.priority_rank,
+                r.final_score,
+                r.trigger_reason,
+                r.trigger_signals,
+                r.model_version,
+                r.valid_from,
+                r.valid_until,
+                r.status,
+                c.action_code,
+                c.action_name,
+                c.business_issue,
+                c.action_category,
+                c.channel,
+                c.description,
+                c.eligibility_rules,
+                c.suitability_rules,
+                c.base_business_value,
+                c.probability_multiplier,
+                c.cooldown_days,
+                c.max_attempts
+            FROM nba_action_recommendation r
+            JOIN nba_action_catalog c ON r.action_id = c.action_id
+            WHERE r.status IN ('pending', 'scheduled')
+              AND r.valid_from <= %s
+              AND r.valid_until >= %s
+              AND c.is_active = TRUE
+              AND MOD(
+                  ('x' || SUBSTRING(r.member_id::text, 1, 8))::bit(32)::int,
+                  %s
+              ) = %s
+            ORDER BY r.final_score DESC, r.priority_rank ASC
+        """
+
+        recommendations = []
+
+        try:
+            with self.engine.connect() as conn:
+                raw_conn = conn.connection.dbapi_connection
+                with raw_conn.cursor() as cursor:
+                    cursor.execute(
+                        query,
+                        (filter_date, filter_date, self.num_workers, self.worker_id),
+                    )
+                    rows = cursor.fetchall()
+
+                    for row in rows:
+                        # Convert row to NBAActionWithRecommendation
+                        rec = NBAActionWithRecommendation(
+                            # Recommendation fields
+                            recommendation_id=row[0],
+                            batch_id=row[1],
+                            batch_date=row[2],
+                            member_id=row[3],
+                            policy_id=row[4],
+                            action_id=row[5],
+                            propensity_score=Decimal(str(row[6])) if row[6] else None,
+                            urgency_score=Decimal(str(row[7])) if row[7] else None,
+                            business_value_score=Decimal(str(row[8])) if row[8] else None,
+                            priority_rank=row[9],
+                            final_score=Decimal(str(row[10])) if row[10] else None,
+                            trigger_reason=row[11],
+                            trigger_signals=row[12],
+                            model_version=row[13],
+                            valid_from=row[14],
+                            valid_until=row[15],
+                            status=RecommendationStatus(row[16]),
+                            # Catalog fields
+                            action_code=row[17],
+                            action_name=row[18],
+                            business_issue=BusinessIssue(row[19]),
+                            action_category=ActionCategory(row[20]),
+                            channel=NBAChannel(row[21]),
+                            description=row[22],
+                            eligibility_rules=row[23],
+                            suitability_rules=row[24],
+                            base_business_value=Decimal(str(row[25])) if row[25] else None,
+                            probability_multiplier=Decimal(str(row[26])) if row[26] else Decimal("1.0"),
+                            cooldown_days=row[27] or 30,
+                            max_attempts=row[28] or 3,
+                        )
+                        recommendations.append(rec)
+
+            # Add to shared state queue
+            self.shared_state.add_nba_recommendations(recommendations)
+
+            logger.info(
+                "nba_recommendations_loaded",
+                worker_id=self.worker_id,
+                count=len(recommendations),
+                as_of_date=filter_date.isoformat(),
+            )
+
+        except Exception as e:
+            # Log error but don't fail worker startup
+            # NBA table might not exist in fresh databases
+            logger.warning(
+                "nba_recommendations_load_failed",
+                worker_id=self.worker_id,
+                error=str(e),
+                as_of_date=filter_date.isoformat(),
             )
 
 

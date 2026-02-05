@@ -28,6 +28,8 @@ from brickwell_health.core.serializers import (
     deserialize_digital_processed_triggers,
     deserialize_event_queue,
     deserialize_member_engagement_levels,
+    deserialize_nba_active_effects,
+    deserialize_nba_execution_history,
     deserialize_pending_campaign_responses,
     deserialize_pending_claims,
     serialize_billing_retry_state,
@@ -37,6 +39,8 @@ from brickwell_health.core.serializers import (
     serialize_digital_processed_triggers,
     serialize_event_queue,
     serialize_member_engagement_levels,
+    serialize_nba_active_effects,
+    serialize_nba_execution_history,
     serialize_pending_campaign_responses,
     serialize_pending_claims,
 )
@@ -210,6 +214,13 @@ class CheckpointManagerV2:
             "member_engagement_levels": serialize_member_engagement_levels(
                 shared_state.member_engagement_levels
             ),
+            # NBA Domain State
+            "nba_execution_history": serialize_nba_execution_history(
+                shared_state.nba_execution_history
+            ),
+            "nba_active_effects": serialize_nba_active_effects(
+                shared_state.nba_active_effects
+            ),
             # Statistics
             "stats": {
                 "active_policies": len(shared_state.active_policies),
@@ -217,6 +228,9 @@ class CheckpointManagerV2:
                 "pending_claims_count": len(shared_state.pending_claims),
                 "crm_queue_size": len(shared_state.crm_event_queue),
                 "communication_queue_size": len(shared_state.communication_event_queue),
+                "nba_queue_size": len(shared_state.nba_action_queue),
+                "nba_execution_history_members": len(shared_state.nba_execution_history),
+                "nba_active_effects_policies": len(shared_state.nba_active_effects),
             },
         }
 
@@ -489,12 +503,25 @@ def restore_shared_state_from_checkpoint(
             checkpoint["member_engagement_levels"]
         )
 
+    # NBA Domain State
+    if "nba_execution_history" in checkpoint:
+        shared_state.nba_execution_history = deserialize_nba_execution_history(
+            checkpoint["nba_execution_history"]
+        )
+
+    if "nba_active_effects" in checkpoint:
+        shared_state.nba_active_effects = deserialize_nba_active_effects(
+            checkpoint["nba_active_effects"]
+        )
+
     logger.info(
         "shared_state_restored_from_checkpoint",
         pending_claims=len(shared_state.pending_claims),
         crm_queue=len(shared_state.crm_event_queue),
         communication_queue=len(shared_state.communication_event_queue),
         engagement_levels=len(shared_state.member_engagement_levels),
+        nba_execution_history=len(shared_state.nba_execution_history),
+        nba_active_effects=len(shared_state.nba_active_effects),
     )
 
 

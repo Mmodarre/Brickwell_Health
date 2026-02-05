@@ -564,3 +564,125 @@ def deserialize_digital_processed_triggers(triggers: list[str]) -> set[str]:
         Set of trigger keys
     """
     return set(triggers)
+
+
+def serialize_nba_execution_history(
+    history: dict[UUID, list[dict]],
+) -> dict[str, list[dict]]:
+    """
+    Serialize NBA execution history for checkpoint.
+
+    Args:
+        history: Dict mapping member_id to list of execution records
+
+    Returns:
+        Serialized dict with string keys
+    """
+    serialized = {}
+    for member_id, executions in history.items():
+        serialized[str(member_id)] = []
+        for exec_data in executions:
+            serialized_exec = {
+                "action_id": str(exec_data["action_id"])
+                if exec_data.get("action_id")
+                else None,
+                "action_code": exec_data.get("action_code"),
+                "action_category": exec_data.get("action_category"),
+                "executed_at": exec_data["executed_at"].isoformat()
+                if exec_data.get("executed_at")
+                else None,
+                "execution_channel": exec_data.get("execution_channel"),
+            }
+            serialized[str(member_id)].append(serialized_exec)
+    return serialized
+
+
+def deserialize_nba_execution_history(
+    serialized: dict[str, list[dict]],
+) -> dict[UUID, list[dict]]:
+    """
+    Deserialize NBA execution history from checkpoint.
+
+    Args:
+        serialized: Serialized dict with string keys
+
+    Returns:
+        Dict mapping member_id (UUID) to list of execution records
+    """
+    result = {}
+    for member_id_str, executions in serialized.items():
+        member_id = UUID(member_id_str)
+        result[member_id] = []
+        for exec_data in executions:
+            deserialized_exec = {
+                "action_id": deserialize_uuid(exec_data.get("action_id")),
+                "action_code": exec_data.get("action_code"),
+                "action_category": exec_data.get("action_category"),
+                "executed_at": deserialize_datetime(exec_data.get("executed_at")),
+                "execution_channel": exec_data.get("execution_channel"),
+            }
+            result[member_id].append(deserialized_exec)
+    return result
+
+
+def serialize_nba_active_effects(
+    effects: dict[UUID, list[dict]],
+) -> dict[str, list[dict]]:
+    """
+    Serialize NBA active effects for checkpoint.
+
+    Args:
+        effects: Dict mapping policy_id to list of effect records
+
+    Returns:
+        Serialized dict with string keys
+    """
+    serialized = {}
+    for policy_id, effect_list in effects.items():
+        serialized[str(policy_id)] = []
+        for effect in effect_list:
+            serialized_effect = {
+                "effect_type": effect.get("effect_type"),
+                "value": effect.get("value"),
+                "expires_at": effect["expires_at"].isoformat()
+                if effect.get("expires_at")
+                else None,
+                "source_action_id": str(effect["source_action_id"])
+                if effect.get("source_action_id")
+                else None,
+                "source_recommendation_id": str(effect["source_recommendation_id"])
+                if effect.get("source_recommendation_id")
+                else None,
+            }
+            serialized[str(policy_id)].append(serialized_effect)
+    return serialized
+
+
+def deserialize_nba_active_effects(
+    serialized: dict[str, list[dict]],
+) -> dict[UUID, list[dict]]:
+    """
+    Deserialize NBA active effects from checkpoint.
+
+    Args:
+        serialized: Serialized dict with string keys
+
+    Returns:
+        Dict mapping policy_id (UUID) to list of effect records
+    """
+    result = {}
+    for policy_id_str, effect_list in serialized.items():
+        policy_id = UUID(policy_id_str)
+        result[policy_id] = []
+        for effect in effect_list:
+            deserialized_effect = {
+                "effect_type": effect.get("effect_type"),
+                "value": effect.get("value"),
+                "expires_at": deserialize_datetime(effect.get("expires_at")),
+                "source_action_id": deserialize_uuid(effect.get("source_action_id")),
+                "source_recommendation_id": deserialize_uuid(
+                    effect.get("source_recommendation_id")
+                ),
+            }
+            result[policy_id].append(deserialized_effect)
+    return result

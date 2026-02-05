@@ -88,6 +88,10 @@ class BatchWriter:
         "nps_survey",
         "csat_survey_pending",
         "csat_survey",
+        # NBA Domain (depend on member, policy, communication, interaction)
+        "nba_action_catalog",
+        "nba_action_recommendation",
+        "nba_action_execution",
     ]
 
     def __init__(self, engine: Engine, batch_size: int = 10000):
