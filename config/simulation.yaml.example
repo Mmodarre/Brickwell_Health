@@ -227,22 +227,12 @@ billing:
   days_to_suspension: 30            # Days past due before policy suspended (claims blocked)
   days_to_lapse: 60                 # Days past due (~2 months) before policy lapsed (new policy required)
 
-# Azure PostgreSQL database (commented out)
-# database:
-  # host: brickwell-pg.postgres.database.azure.com
-  # port: 5432
-  # database: brickwell_health
-  # username: brickwell
-  # password: "${BRICKWELL_DB_PASSWORD:-Brickwell_dev}"
-  # pool_size: 5
-  # batch_size: 10000
-
 # Local Docker PostgreSQL database
 database:
-  host: localhost
-  port: 5432
-  database: brickwell_health
-  username: brickwell
+  host: "${BRICKWELL_DB_HOST:-localhost}"
+  port: "${BRICKWELL_DB_PORT:-5432}"
+  database: "${BRICKWELL_DB_NAME:-brickwell_health}"
+  username: "${BRICKWELL_DB_USER:-brickwell}"
   password: "${BRICKWELL_DB_PASSWORD:-brickwell_dev}"
   pool_size: 5
   batch_size: 10000
@@ -434,9 +424,9 @@ llm:
   
   # Databricks connection settings
   databricks:
-    host: "<DATABRICKS_HOST>"
-    token: "<DATABRICKS_TOKEN>"
-    http_path: "<DATABRICKS_HTTP_PATH>"
+    host: "${DATABRICKS_HOST:-your-databricks-host}"
+    token: "${DATABRICKS_TOKEN:-your-databricks-token}"
+    http_path: "${DATABRICKS_HTTP_PATH:-/sql/1.0/warehouses/your-warehouse-id}"
   
   # Model for Databricks ai_query (tested models)
   # - databricks-claude-haiku-4-5: Fast, clean output, harsher NPS scores
