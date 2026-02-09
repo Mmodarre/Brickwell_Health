@@ -33,6 +33,7 @@ def create_publisher(config: StreamingConfig, worker_id: int) -> EventPublisher:
             token=zb.token,
             client_id=zb.client_id,
             client_secret=zb.client_secret,
+            token_cache_dir=zb.token_cache_dir,
         )
 
     elif backend == "json_file":

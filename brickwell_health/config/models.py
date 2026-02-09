@@ -1052,6 +1052,10 @@ class ZeroBusConfig(BaseModel):
     )
     catalog: str = Field(default="brickwell_health", description="Unity Catalog name")
     schema_name: str = Field(default="ingest_schema_bwh", description="Schema name in Unity Catalog")
+    token_cache_dir: str = Field(
+        default="",
+        description="Directory for cross-process OAuth token cache. Empty = auto temp dir.",
+    )
 
 
 class StreamingConfig(BaseModel):

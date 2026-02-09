@@ -293,6 +293,7 @@ streaming:
     client_secret: ""                                               # OAuth2 alternative (leave empty for PAT)
     catalog: "brickwell_health"
     schema_name: "ingest_schema_bwh"
+    token_cache_dir: ""                                             # Auto temp dir; set path for persistent cross-run caching
 
 # ============================================================================
 # NBA/NPS DOMAIN CONFIGURATION

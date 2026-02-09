@@ -6,6 +6,7 @@ Supports both fresh runs and resume from checkpoint.
 """
 
 import multiprocessing
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -14,13 +15,12 @@ import structlog
 from sqlalchemy import text
 
 from brickwell_health.config.models import SimulationConfig
-from brickwell_health.core.worker import run_worker
 from brickwell_health.core.checkpoint_v2 import (
     CheckpointManagerV2,
     CheckpointNotFoundError,
 )
+from brickwell_health.core.worker import run_worker
 from brickwell_health.db.connection import create_engine_from_config
-
 
 logger = structlog.get_logger()
 
@@ -53,7 +53,7 @@ class ParallelRunner:
         self.config = config
         self.num_workers = config.parallel.num_workers
         self.log_level = log_level
-        
+
         # Checkpoint manager for verifying checkpoints exist
         checkpoint_dir = Path(config.reference_data_path).parent / "checkpoints"
         self.checkpoint_manager = CheckpointManagerV2(checkpoint_dir)
@@ -72,11 +72,11 @@ class ParallelRunner:
             CheckpointNotFoundError: If resume=True but checkpoints missing
         """
         mode = "resume" if resume else "fresh"
-        
+
         # Verify checkpoints exist for all workers if resuming
         if resume:
             self._verify_checkpoints_exist()
-        
+
         logger.info(
             "parallel_run_starting",
             num_workers=self.num_workers,
@@ -87,15 +87,21 @@ class ParallelRunner:
 
         start_time = time.time()
 
-        # Create worker arguments (including resume_mode)
-        worker_args = [
-            (self.config, worker_id, self.num_workers, self.log_level, resume)
-            for worker_id in range(self.num_workers)
-        ]
+        # Setup token cache for cross-process OAuth sharing
+        token_cache_dir = self._setup_token_cache()
 
-        # Run workers in parallel
-        with multiprocessing.Pool(self.num_workers) as pool:
-            results = pool.starmap(run_worker, worker_args)
+        try:
+            # Create worker arguments (including resume_mode)
+            worker_args = [
+                (self.config, worker_id, self.num_workers, self.log_level, resume)
+                for worker_id in range(self.num_workers)
+            ]
+
+            # Run workers in parallel
+            with multiprocessing.Pool(self.num_workers) as pool:
+                results = pool.starmap(run_worker, worker_args)
+        finally:
+            self._cleanup_token_cache(token_cache_dir)
 
         # Aggregate results
         elapsed = time.time() - start_time
@@ -132,11 +138,11 @@ class ParallelRunner:
             CheckpointNotFoundError: If resume=True but checkpoints missing
         """
         mode = "resume" if resume else "fresh"
-        
+
         # Verify checkpoints exist for all workers if resuming
         if resume:
             self._verify_checkpoints_exist()
-        
+
         logger.info(
             "sequential_run_starting",
             num_workers=self.num_workers,
@@ -145,12 +151,18 @@ class ParallelRunner:
 
         start_time = time.time()
 
-        results = []
-        for worker_id in range(self.num_workers):
-            result = run_worker(
-                self.config, worker_id, self.num_workers, self.log_level, resume
-            )
-            results.append(result)
+        # Setup token cache for cross-process OAuth sharing
+        token_cache_dir = self._setup_token_cache()
+
+        try:
+            results = []
+            for worker_id in range(self.num_workers):
+                result = run_worker(
+                    self.config, worker_id, self.num_workers, self.log_level, resume
+                )
+                results.append(result)
+        finally:
+            self._cleanup_token_cache(token_cache_dir)
 
         elapsed = time.time() - start_time
         aggregated = self._aggregate_results(results, elapsed)
@@ -181,18 +193,47 @@ class ParallelRunner:
         for worker_id in range(self.num_workers):
             if not self.checkpoint_manager.has_checkpoint(worker_id):
                 missing_workers.append(worker_id)
-        
+
         if missing_workers:
             raise CheckpointNotFoundError(
                 f"Cannot resume: missing checkpoints for workers {missing_workers}. "
                 f"Run a fresh simulation first to create checkpoints."
             )
-        
+
         logger.info(
             "checkpoints_verified",
             num_workers=self.num_workers,
             all_present=True,
         )
+
+    def _setup_token_cache(self) -> Path | None:
+        """Create token cache directory if ZeroBus streaming with OAuth is enabled."""
+        if not self.config.streaming.enabled:
+            return None
+        if self.config.streaming.backend.lower() != "zerobus":
+            return None
+        zb = self.config.streaming.zerobus
+        if not zb.client_id:
+            return None
+
+        if zb.token_cache_dir:
+            cache_dir = Path(zb.token_cache_dir)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            cache_dir = Path(tempfile.mkdtemp(prefix="brickwell_token_cache_"))
+            self.config.streaming.zerobus.token_cache_dir = str(cache_dir)
+
+        logger.info("token_cache_setup", cache_dir=str(cache_dir))
+        return cache_dir
+
+    def _cleanup_token_cache(self, cache_dir: Path | None) -> None:
+        """Remove token cache directory after all workers complete."""
+        if cache_dir is None:
+            return
+        from brickwell_health.streaming.token_cache import cleanup_token_cache
+
+        cleanup_token_cache(cache_dir)
+        logger.info("token_cache_cleaned_up", cache_dir=str(cache_dir))
 
     def _aggregate_results(
         self,

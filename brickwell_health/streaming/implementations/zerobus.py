@@ -6,6 +6,7 @@ Uses OAuth2 service principal authentication (client_id + client_secret).
 
 import time
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -53,6 +54,7 @@ class ZeroBusPublisher:
         token: str = "",
         client_id: str = "",
         client_secret: str = "",
+        token_cache_dir: str = "",
     ) -> None:
         self._workspace_id = workspace_id
         self._workspace_url = workspace_url.rstrip("/")
@@ -62,6 +64,7 @@ class ZeroBusPublisher:
         self._tables = tables
         self._client_id = client_id
         self._client_secret = client_secret
+        self._token_cache_dir = Path(token_cache_dir) if token_cache_dir else None
 
         # Build ZeroBus server endpoint (no https:// prefix)
         # Azure: workspace_id.zerobus.region.azuredatabricks.net
@@ -136,12 +139,29 @@ class ZeroBusPublisher:
         table_properties = TableProperties(topic)
         options = StreamConfigurationOptions(record_type=RecordType.JSON)
 
-        stream = self._sdk.create_stream(
-            self._client_id,
-            self._client_secret,
-            table_properties,
-            options,
-        )
+        if self._token_cache_dir and self._client_id:
+            from brickwell_health.streaming.token_cache import CachingHeadersProvider
+
+            headers_provider = CachingHeadersProvider(
+                workspace_id=self._workspace_id,
+                workspace_url=self._workspace_url,
+                table_name=topic,
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                cache_dir=self._token_cache_dir,
+            )
+            stream = self._sdk.create_stream_with_headers_provider(
+                headers_provider,
+                table_properties,
+                options,
+            )
+        else:
+            stream = self._sdk.create_stream(
+                self._client_id,
+                self._client_secret,
+                table_properties,
+                options,
+            )
         self._streams[topic] = stream
         logger.debug("zerobus_stream_created", topic=topic)
 
