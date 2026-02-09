@@ -1,0 +1,802 @@
+[
+  {
+    "specialty_id": 1,
+    "specialty_code": "ORTHO",
+    "specialty_name": "Orthopaedic Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 2,
+    "specialty_code": "CARDIO",
+    "specialty_name": "Cardiology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 3,
+    "specialty_code": "GASTRO",
+    "specialty_name": "Gastroenterology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 4,
+    "specialty_code": "NEURO",
+    "specialty_name": "Neurology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 5,
+    "specialty_code": "OPHTHAL",
+    "specialty_name": "Ophthalmology",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 6,
+    "specialty_code": "ENT",
+    "specialty_name": "Ear, Nose and Throat Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 7,
+    "specialty_code": "UROL",
+    "specialty_name": "Urology",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 8,
+    "specialty_code": "GENSURG",
+    "specialty_name": "General Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 9,
+    "specialty_code": "PLASTSURG",
+    "specialty_name": "Plastic and Reconstructive Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 10,
+    "specialty_code": "NEUROSURG",
+    "specialty_name": "Neurosurgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 11,
+    "specialty_code": "CARDTSURG",
+    "specialty_name": "Cardiothoracic Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 12,
+    "specialty_code": "VASCSURG",
+    "specialty_name": "Vascular Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 13,
+    "specialty_code": "PAEDMED",
+    "specialty_name": "Paediatric Medicine",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 14,
+    "specialty_code": "PAEDSURG",
+    "specialty_name": "Paediatric Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 15,
+    "specialty_code": "OBGYN",
+    "specialty_name": "Obstetrics and Gynaecology",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 16,
+    "specialty_code": "DERMAT",
+    "specialty_name": "Dermatology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 17,
+    "specialty_code": "ENDOCR",
+    "specialty_name": "Endocrinology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 18,
+    "specialty_code": "RHEUM",
+    "specialty_name": "Rheumatology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 19,
+    "specialty_code": "NEPHROL",
+    "specialty_name": "Nephrology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 20,
+    "specialty_code": "ONCOL",
+    "specialty_name": "Medical Oncology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 21,
+    "specialty_code": "HAEMATOL",
+    "specialty_name": "Haematology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 22,
+    "specialty_code": "RESPIR",
+    "specialty_name": "Respiratory Medicine",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 23,
+    "specialty_code": "INFECT",
+    "specialty_name": "Infectious Diseases",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 24,
+    "specialty_code": "GERIAT",
+    "specialty_name": "Geriatric Medicine",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 25,
+    "specialty_code": "PSYCH",
+    "specialty_name": "Psychiatry",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 26,
+    "specialty_code": "RADIOL",
+    "specialty_name": "Radiology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 27,
+    "specialty_code": "RADONC",
+    "specialty_name": "Radiation Oncology",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 28,
+    "specialty_code": "ANAESTH",
+    "specialty_name": "Anaesthesia",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 29,
+    "specialty_code": "EMERG",
+    "specialty_name": "Emergency Medicine",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 30,
+    "specialty_code": "INTCARE",
+    "specialty_name": "Intensive Care Medicine",
+    "specialty_category": "Medicine",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 31,
+    "specialty_code": "PHYSIO",
+    "specialty_name": "Physiotherapy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 32,
+    "specialty_code": "CHIRO",
+    "specialty_name": "Chiropractic",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 33,
+    "specialty_code": "OSTEO",
+    "specialty_name": "Osteopathy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 34,
+    "specialty_code": "PODIAT",
+    "specialty_name": "Podiatry",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 35,
+    "specialty_code": "OPTOM",
+    "specialty_name": "Optometry",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 36,
+    "specialty_code": "PSYCOL",
+    "specialty_name": "Psychology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 37,
+    "specialty_code": "OCCTHER",
+    "specialty_name": "Occupational Therapy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 38,
+    "specialty_code": "SPEECH",
+    "specialty_name": "Speech Pathology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 39,
+    "specialty_code": "DIETIT",
+    "specialty_name": "Dietetics",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 40,
+    "specialty_code": "AUDIOL",
+    "specialty_name": "Audiology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 41,
+    "specialty_code": "GENDEN",
+    "specialty_name": "General Dentistry",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 42,
+    "specialty_code": "ORTHODEN",
+    "specialty_name": "Orthodontics",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 43,
+    "specialty_code": "ENDODEN",
+    "specialty_name": "Endodontics",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 44,
+    "specialty_code": "PERIODON",
+    "specialty_name": "Periodontics",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 45,
+    "specialty_code": "PROSTHO",
+    "specialty_name": "Prosthodontics",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 46,
+    "specialty_code": "ORALSURG",
+    "specialty_name": "Oral and Maxillofacial Surgery",
+    "specialty_category": "Dental",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 47,
+    "specialty_code": "PAEDDEN",
+    "specialty_name": "Paediatric Dentistry",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 48,
+    "specialty_code": "ORALMED",
+    "specialty_name": "Oral Medicine",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 49,
+    "specialty_code": "REMEDMASS",
+    "specialty_name": "Remedial Massage",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 50,
+    "specialty_code": "ACUPUNC",
+    "specialty_name": "Acupuncture",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 51,
+    "specialty_code": "PODIATRY",
+    "specialty_name": "Podiatry",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 52,
+    "specialty_code": "AUDIOL",
+    "specialty_name": "Audiology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 53,
+    "specialty_code": "DIETETICS",
+    "specialty_name": "Dietetics",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 54,
+    "specialty_code": "SPEECHPATH",
+    "specialty_name": "Speech Pathology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 55,
+    "specialty_code": "OCCTHER",
+    "specialty_name": "Occupational Therapy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 56,
+    "specialty_code": "EXERCISE",
+    "specialty_name": "Exercise Physiology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 57,
+    "specialty_code": "DENTHYG",
+    "specialty_name": "Dental Hygiene",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 58,
+    "specialty_code": "DENTTHER",
+    "specialty_name": "Dental Therapy",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 59,
+    "specialty_code": "PROSTHDENT",
+    "specialty_name": "Prosthodontics",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 60,
+    "specialty_code": "PAEDDENT",
+    "specialty_name": "Paediatric Dentistry",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 61,
+    "specialty_code": "ORALMED",
+    "specialty_name": "Oral Medicine",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 62,
+    "specialty_code": "ORALPATH",
+    "specialty_name": "Oral Pathology",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 63,
+    "specialty_code": "PUBDENT",
+    "specialty_name": "Public Health Dentistry",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 64,
+    "specialty_code": "FORENSDENT",
+    "specialty_name": "Forensic Odontology",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": false,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 65,
+    "specialty_code": "SPECNEED",
+    "specialty_name": "Special Needs Dentistry",
+    "specialty_category": "Dental",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 66,
+    "specialty_code": "HANDSUNG",
+    "specialty_name": "Hand Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 67,
+    "specialty_code": "BREASTSURG",
+    "specialty_name": "Breast Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 68,
+    "specialty_code": "ENDOSURG",
+    "specialty_name": "Endocrine Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 69,
+    "specialty_code": "HEPATOBIL",
+    "specialty_name": "Hepatobiliary Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 70,
+    "specialty_code": "UPPERGISURG",
+    "specialty_name": "Upper GI Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 71,
+    "specialty_code": "COLORECTAL",
+    "specialty_name": "Colorectal Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 72,
+    "specialty_code": "BARIATRIC",
+    "specialty_name": "Bariatric Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 73,
+    "specialty_code": "ROBSURG",
+    "specialty_name": "Robotic Surgery",
+    "specialty_category": "Surgery",
+    "is_surgical": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 74,
+    "specialty_code": "ACUPUNCT",
+    "specialty_name": "Acupuncture",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 75,
+    "specialty_code": "NATUROPATH",
+    "specialty_name": "Naturopathy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 76,
+    "specialty_code": "OSTEO",
+    "specialty_name": "Osteopathy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 77,
+    "specialty_code": "MYOTHER",
+    "specialty_name": "Myotherapy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 78,
+    "specialty_code": "REMEDMASS",
+    "specialty_name": "Remedial Massage",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 79,
+    "specialty_code": "HOMEOPATH",
+    "specialty_name": "Homeopathy",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": false,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "specialty_id": 80,
+    "specialty_code": "REFLEXOL",
+    "specialty_name": "Reflexology",
+    "specialty_category": "Allied Health",
+    "is_surgical": false,
+    "is_active": false,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

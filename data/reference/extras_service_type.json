@@ -1,0 +1,222 @@
+[
+  {
+    "service_type_id": 1,
+    "type_code": "DENTAL_CHECKUP",
+    "type_name": "Dental Check-up and Clean",
+    "benefit_category_id": 4,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 2,
+    "type_code": "DENTAL_FILLING",
+    "type_name": "Dental Fillings",
+    "benefit_category_id": 4,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 3,
+    "type_code": "DENTAL_CROWN",
+    "type_name": "Dental Crowns and Bridges",
+    "benefit_category_id": 5,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 4,
+    "type_code": "DENTAL_ROOTCANAL",
+    "type_name": "Root Canal Treatment",
+    "benefit_category_id": 5,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 5,
+    "type_code": "ORTHO_BRACES",
+    "type_name": "Orthodontic Braces",
+    "benefit_category_id": 6,
+    "requires_referral": true,
+    "claiming_channel": "Both",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 6,
+    "type_code": "OPTICAL_GLASSES",
+    "type_name": "Prescription Glasses",
+    "benefit_category_id": 7,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 7,
+    "type_code": "OPTICAL_CONTACTS",
+    "type_name": "Contact Lenses",
+    "benefit_category_id": 7,
+    "requires_referral": false,
+    "claiming_channel": "Both",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 8,
+    "type_code": "PHYSIO_CONSULT",
+    "type_name": "Physiotherapy Consultation",
+    "benefit_category_id": 8,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 9,
+    "type_code": "CHIRO_ADJUST",
+    "type_name": "Chiropractic Adjustment",
+    "benefit_category_id": 9,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 10,
+    "type_code": "PODIATRY_CONSULT",
+    "type_name": "Podiatry Consultation",
+    "benefit_category_id": 10,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 11,
+    "type_code": "PODIATRY_ORTHO",
+    "type_name": "Custom Orthotics",
+    "benefit_category_id": 10,
+    "requires_referral": false,
+    "claiming_channel": "Both",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 12,
+    "type_code": "PSYCH_SESSION",
+    "type_name": "Psychology Session",
+    "benefit_category_id": 11,
+    "requires_referral": true,
+    "claiming_channel": "Both",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 13,
+    "type_code": "OSTEO_CONSULT",
+    "type_name": "Osteopathy Consultation",
+    "benefit_category_id": 12,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 14,
+    "type_code": "MASSAGE_REMEDIAL",
+    "type_name": "Remedial Massage Treatment",
+    "benefit_category_id": 13,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 15,
+    "type_code": "ACUPUNC_SESSION",
+    "type_name": "Acupuncture Session",
+    "benefit_category_id": 14,
+    "requires_referral": false,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 16,
+    "type_code": "DIET_CONSULT",
+    "type_name": "Dietitian Consultation",
+    "benefit_category_id": 16,
+    "requires_referral": false,
+    "claiming_channel": "Both",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 17,
+    "type_code": "SPEECH_THERAPY",
+    "type_name": "Speech Pathology Session",
+    "benefit_category_id": 17,
+    "requires_referral": true,
+    "claiming_channel": "Both",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 18,
+    "type_code": "HEARING_AIDS",
+    "type_name": "Hearing Aid Purchase",
+    "benefit_category_id": 19,
+    "requires_referral": true,
+    "claiming_channel": "Online",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 19,
+    "type_code": "AMBULANCE_EMERG",
+    "type_name": "Emergency Ambulance Transport",
+    "benefit_category_id": 21,
+    "requires_referral": false,
+    "claiming_channel": "Online",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "service_type_id": 20,
+    "type_code": "EXERCISE_PHYSIO",
+    "type_name": "Exercise Physiology Session",
+    "benefit_category_id": 22,
+    "requires_referral": true,
+    "claiming_channel": "HICAPS",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "type_id": 1,
+    "type_code": "RETENTION",
+    "type_name": "Retention Campaign",
+    "description": "Campaigns to retain at-risk members",
+    "target_response_rate": 0.08,
+    "typical_duration_weeks": 4,
+    "distribution_weight": 0.30,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 2,
+    "type_code": "UPSELL",
+    "type_name": "Upsell Campaign",
+    "description": "Campaigns to upgrade members to higher tiers",
+    "target_response_rate": 0.05,
+    "typical_duration_weeks": 3,
+    "distribution_weight": 0.20,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 3,
+    "type_code": "CROSS_SELL",
+    "type_name": "Cross-Sell Campaign",
+    "description": "Campaigns to add extras or hospital cover",
+    "target_response_rate": 0.04,
+    "typical_duration_weeks": 3,
+    "distribution_weight": 0.15,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 4,
+    "type_code": "ENGAGEMENT",
+    "type_name": "Engagement Campaign",
+    "description": "Campaigns to increase member engagement",
+    "target_response_rate": 0.12,
+    "typical_duration_weeks": 2,
+    "distribution_weight": 0.25,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 5,
+    "type_code": "WINBACK",
+    "type_name": "Winback Campaign",
+    "description": "Campaigns to re-acquire lapsed members",
+    "target_response_rate": 0.03,
+    "typical_duration_weeks": 6,
+    "distribution_weight": 0.10,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 6,
+    "type_code": "ACQUISITION",
+    "type_name": "Acquisition Campaign",
+    "description": "Campaigns for new member acquisition",
+    "target_response_rate": 0.02,
+    "typical_duration_weeks": 4,
+    "distribution_weight": 0.00,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

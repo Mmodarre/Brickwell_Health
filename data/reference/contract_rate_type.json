@@ -1,0 +1,47 @@
+[
+  {
+    "rate_type_id": 1,
+    "type_code": "PER_DIEM",
+    "type_name": "Per Diem Rate",
+    "description": "Daily rate payment for each day of hospital admission, commonly used for rehabilitation and psychiatric services",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "rate_type_id": 2,
+    "type_code": "DRG",
+    "type_name": "Diagnosis Related Group",
+    "description": "Payment based on AR-DRG classification system grouping episodes by diagnosis, procedures and complexity",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "rate_type_id": 3,
+    "type_code": "CASE",
+    "type_name": "Case Payment",
+    "description": "Fixed payment per episode of care regardless of length of stay, used for specific procedures like joint replacements",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "rate_type_id": 4,
+    "type_code": "FFS",
+    "type_name": "Fee For Service",
+    "description": "Payment for each individual service or item provided, typically aligned with MBS schedule fees",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "rate_type_id": 5,
+    "type_code": "BUNDLED",
+    "type_name": "Bundled Payment",
+    "description": "Single payment covering all services for an episode including hospital, medical and prostheses costs",
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

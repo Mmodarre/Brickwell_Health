@@ -1,0 +1,72 @@
+[
+  {
+    "payment_method_id": 1,
+    "method_code": "DD",
+    "method_name": "Direct Debit",
+    "is_automatic": true,
+    "is_active": true,
+    "processing_days": 3,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "payment_method_id": 2,
+    "method_code": "BPAY",
+    "method_name": "BPAY",
+    "is_automatic": false,
+    "is_active": true,
+    "processing_days": 2,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "payment_method_id": 3,
+    "method_code": "CC",
+    "method_name": "Credit Card",
+    "is_automatic": true,
+    "is_active": true,
+    "processing_days": 1,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "payment_method_id": 4,
+    "method_code": "CASH",
+    "method_name": "Cash Payment",
+    "is_automatic": false,
+    "is_active": false,
+    "processing_days": 0,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "payment_method_id": 5,
+    "method_code": "CHEQUE",
+    "method_name": "Cheque",
+    "is_automatic": false,
+    "is_active": false,
+    "processing_days": 5,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "payment_method_id": 6,
+    "method_code": "EFT",
+    "method_name": "Electronic Funds Transfer",
+    "is_automatic": false,
+    "is_active": true,
+    "processing_days": 2,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "payment_method_id": 7,
+    "method_code": "PAYID",
+    "method_name": "PayID",
+    "is_automatic": false,
+    "is_active": true,
+    "processing_days": 1,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

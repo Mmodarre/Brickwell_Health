@@ -1,0 +1,42 @@
+[
+  {
+    "hospital_type_id": 1,
+    "type_code": "PRIVATE",
+    "type_name": "Private Hospital",
+    "description": "Privately owned and operated hospital facility providing inpatient and outpatient services",
+    "is_day_only": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "hospital_type_id": 2,
+    "type_code": "PUBLIC",
+    "type_name": "Public Hospital",
+    "description": "Government funded public hospital facility providing services to all patients",
+    "is_day_only": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "hospital_type_id": 3,
+    "type_code": "DAY",
+    "type_name": "Day Surgery Centre",
+    "description": "Facility providing same-day surgical procedures without overnight admission",
+    "is_day_only": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "hospital_type_id": 4,
+    "type_code": "REHAB",
+    "type_name": "Rehabilitation Facility",
+    "description": "Specialised facility providing rehabilitation and recovery services for patients",
+    "is_day_only": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

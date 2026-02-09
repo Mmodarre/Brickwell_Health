@@ -1,0 +1,152 @@
+[
+  {
+    "provider_type_id": 1,
+    "type_code": "GP",
+    "type_name": "General Practitioner",
+    "type_category": "Medical",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 2,
+    "type_code": "SPEC",
+    "type_name": "Medical Specialist",
+    "type_category": "Medical",
+    "requires_referral": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 3,
+    "type_code": "HOSP",
+    "type_name": "Hospital",
+    "type_category": "Hospital",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 4,
+    "type_code": "DENT",
+    "type_name": "Dentist",
+    "type_category": "Dental",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 5,
+    "type_code": "PHYS",
+    "type_name": "Physiotherapist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 6,
+    "type_code": "CHIRO",
+    "type_name": "Chiropractor",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 7,
+    "type_code": "OPTOM",
+    "type_name": "Optometrist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 8,
+    "type_code": "PSYCH",
+    "type_name": "Psychologist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 9,
+    "type_code": "OSTEO",
+    "type_name": "Osteopath",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 10,
+    "type_code": "PODIAT",
+    "type_name": "Podiatrist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 11,
+    "type_code": "NATURO",
+    "type_name": "Naturopath",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 12,
+    "type_code": "SPEECH",
+    "type_name": "Speech Pathologist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 13,
+    "type_code": "DIETN",
+    "type_name": "Dietitian",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 14,
+    "type_code": "ACUPUN",
+    "type_name": "Acupuncturist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "provider_type_id": 15,
+    "type_code": "REMASS",
+    "type_name": "Remedial Massage Therapist",
+    "type_category": "Allied Health",
+    "requires_referral": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

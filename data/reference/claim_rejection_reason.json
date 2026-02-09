@@ -1,0 +1,50 @@
+[
+  {
+    "rejection_reason_id": 1,
+    "reason_code": "NO_COVERAGE",
+    "reason_description": "No coverage on policy",
+    "category": "Coverage"
+  },
+  {
+    "rejection_reason_id": 2,
+    "reason_code": "LIMITS_EXHAUSTED",
+    "reason_description": "Annual limits reached",
+    "category": "Limits"
+  },
+  {
+    "rejection_reason_id": 3,
+    "reason_code": "WAITING_PERIOD",
+    "reason_description": "Waiting period not satisfied",
+    "category": "Eligibility"
+  },
+  {
+    "rejection_reason_id": 4,
+    "reason_code": "POLICY_EXCLUSIONS",
+    "reason_description": "Service excluded under policy",
+    "category": "Coverage"
+  },
+  {
+    "rejection_reason_id": 5,
+    "reason_code": "PRE_EXISTING",
+    "reason_description": "Pre-existing condition exclusion",
+    "category": "Eligibility"
+  },
+  {
+    "rejection_reason_id": 6,
+    "reason_code": "PROVIDER_ISSUES",
+    "reason_description": "Provider not registered or billing issue",
+    "category": "Provider"
+  },
+  {
+    "rejection_reason_id": 7,
+    "reason_code": "ADMINISTRATIVE",
+    "reason_description": "Administrative or documentation issue",
+    "category": "Administrative"
+  },
+  {
+    "rejection_reason_id": 8,
+    "reason_code": "MEMBERSHIP_INACTIVE",
+    "reason_description": "Policy suspended or lapsed",
+    "category": "Eligibility"
+  }
+]

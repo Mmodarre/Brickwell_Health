@@ -1,0 +1,42 @@
+[
+  {
+    "product_type_id": 1,
+    "type_code": "HOSPITAL",
+    "type_name": "Hospital Cover",
+    "description": "Private hospital insurance covering accommodation, theatre fees, and medical services for in-hospital treatment",
+    "is_active": true,
+    "display_order": 1,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_type_id": 2,
+    "type_code": "EXTRAS",
+    "type_name": "Extras Cover",
+    "description": "General treatment cover for services such as dental, optical, physiotherapy, and other ancillary health services",
+    "is_active": true,
+    "display_order": 2,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_type_id": 3,
+    "type_code": "COMBINED",
+    "type_name": "Combined Hospital & Extras",
+    "description": "Comprehensive cover combining both hospital and extras benefits in a single policy for complete health protection",
+    "is_active": true,
+    "display_order": 3,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_type_id": 4,
+    "type_code": "AMBULANCE",
+    "type_name": "Ambulance Cover",
+    "description": "Standalone ambulance transport cover for emergency and medically necessary ambulance services across Australia",
+    "is_active": true,
+    "display_order": 4,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

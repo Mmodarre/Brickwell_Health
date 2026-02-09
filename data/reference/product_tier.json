@@ -1,0 +1,54 @@
+[
+  {
+    "product_tier_id": 1,
+    "tier_code": "GOLD",
+    "tier_name": "Gold",
+    "tier_level": 1,
+    "description": "Highest level of hospital cover providing comprehensive coverage across all clinical categories. Includes cover for all MBS items and hospital treatments with no exclusions or restrictions on services.",
+    "min_clinical_categories": 38,
+    "effective_date": "2019-04-01",
+    "is_active": true,
+    "display_color": "#FFD700",
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_tier_id": 2,
+    "tier_code": "SILVER",
+    "tier_name": "Silver",
+    "tier_level": 2,
+    "description": "Mid-high level hospital cover providing coverage for most common hospital treatments. Covers rehabilitation, hospital psychiatric services, and palliative care with some restrictions on certain procedures.",
+    "min_clinical_categories": 25,
+    "effective_date": "2019-04-01",
+    "is_active": true,
+    "display_color": "#C0C0C0",
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_tier_id": 3,
+    "tier_code": "BRONZE",
+    "tier_name": "Bronze",
+    "tier_level": 3,
+    "description": "Entry-level hospital cover providing coverage for essential hospital treatments. Covers minimum requirements including rehabilitation and hospital psychiatric services with restrictions on elective procedures.",
+    "min_clinical_categories": 15,
+    "effective_date": "2019-04-01",
+    "is_active": true,
+    "display_color": "#CD7F32",
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_tier_id": 4,
+    "tier_code": "BASIC",
+    "tier_name": "Basic",
+    "tier_level": 4,
+    "description": "Minimum level hospital cover designed primarily for Lifetime Health Cover and Medicare Levy Surcharge purposes. Provides limited coverage with significant restrictions and exclusions on most hospital services.",
+    "min_clinical_categories": 5,
+    "effective_date": "2019-04-01",
+    "is_active": true,
+    "display_color": "#8B4513",
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

@@ -1,6 +1,5 @@
 
 *.pyc
-*.json
 .databricks/
 .vscode/
 scripts/

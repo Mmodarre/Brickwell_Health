@@ -1,0 +1,79 @@
+[
+  {
+    "type_id": 1,
+    "type_code": "POST_CLAIM",
+    "type_name": "Post-Claim Survey",
+    "survey_class": "NPS",
+    "trigger_event": "ClaimPaid",
+    "delay_hours": 24,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 2,
+    "type_code": "POST_CLAIM_REJECTED",
+    "type_name": "Post-Claim Rejected Survey",
+    "survey_class": "NPS",
+    "trigger_event": "ClaimRejected",
+    "delay_hours": 48,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 3,
+    "type_code": "POST_INTERACTION",
+    "type_name": "Post-Interaction Survey",
+    "survey_class": "CSAT",
+    "trigger_event": "InteractionCompleted",
+    "delay_hours": 1,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 4,
+    "type_code": "POST_CASE",
+    "type_name": "Post-Case Resolution Survey",
+    "survey_class": "CSAT",
+    "trigger_event": "CaseResolved",
+    "delay_hours": 24,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 5,
+    "type_code": "POST_COMPLAINT",
+    "type_name": "Post-Complaint Resolution Survey",
+    "survey_class": "NPS",
+    "trigger_event": "ComplaintResolved",
+    "delay_hours": 48,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 6,
+    "type_code": "ANNUAL",
+    "type_name": "Annual Relationship Survey",
+    "survey_class": "NPS",
+    "trigger_event": "PolicyAnniversary",
+    "delay_hours": 0,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "type_id": 7,
+    "type_code": "SIX_MONTH",
+    "type_name": "6-Month Relationship Survey",
+    "survey_class": "NPS",
+    "trigger_event": null,
+    "delay_hours": 0,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

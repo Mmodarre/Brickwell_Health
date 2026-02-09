@@ -1,0 +1,67 @@
+[
+  {
+    "channel_id": 1,
+    "channel_code": "HICAPS",
+    "channel_name": "HICAPS Terminal Network",
+    "channel_type": "Terminal",
+    "api_endpoint": "https://api.hicaps.com.au/v2/claims",
+    "is_realtime": true,
+    "supports_quote": true,
+    "supports_cancel": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "channel_id": 2,
+    "channel_code": "TYRO",
+    "channel_name": "Tyro Health Claiming",
+    "channel_type": "Terminal",
+    "api_endpoint": "https://api.tyro.com/health/v1/claims",
+    "is_realtime": true,
+    "supports_quote": true,
+    "supports_cancel": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "channel_id": 3,
+    "channel_code": "MEDIPASS",
+    "channel_name": "Medipass Digital Health Payments",
+    "channel_type": "Mobile App",
+    "api_endpoint": "https://api.medipass.com.au/v3/transactions",
+    "is_realtime": true,
+    "supports_quote": true,
+    "supports_cancel": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "channel_id": 4,
+    "channel_code": "MEMBER_PORTAL",
+    "channel_name": "Member Online Portal",
+    "channel_type": "Web Service",
+    "api_endpoint": "https://members.healthfund.com.au/api/claims",
+    "is_realtime": false,
+    "supports_quote": true,
+    "supports_cancel": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "channel_id": 5,
+    "channel_code": "PROVIDER_PORTAL",
+    "channel_name": "Provider Online Services",
+    "channel_type": "Web Service",
+    "api_endpoint": "https://providers.healthfund.com.au/api/eclaims",
+    "is_realtime": true,
+    "supports_quote": true,
+    "supports_cancel": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

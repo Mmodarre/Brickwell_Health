@@ -1,0 +1,92 @@
+[
+  {
+    "outcome_id": 1,
+    "outcome_code": "RESOLVED",
+    "outcome_name": "Issue Resolved - First Contact",
+    "is_resolution": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 2,
+    "outcome_code": "ESCALATED",
+    "outcome_name": "Escalated to Team Leader",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 3,
+    "outcome_code": "CALLBACK",
+    "outcome_name": "Callback Scheduled",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 4,
+    "outcome_code": "TRANSFERRED",
+    "outcome_name": "Transferred to Another Department",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 5,
+    "outcome_code": "PENDING",
+    "outcome_name": "Pending Further Information",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 6,
+    "outcome_code": "COMPLAINT_LODGED",
+    "outcome_name": "Formal Complaint Lodged",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 7,
+    "outcome_code": "INFO_PROVIDED",
+    "outcome_name": "Information Provided - No Action Required",
+    "is_resolution": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 8,
+    "outcome_code": "CLAIM_SUBMITTED",
+    "outcome_name": "Claim Submitted for Processing",
+    "is_resolution": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 9,
+    "outcome_code": "NO_CONTACT",
+    "outcome_name": "Unable to Contact Member",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "outcome_id": 10,
+    "outcome_code": "PHIO_REFERRED",
+    "outcome_name": "Referred to Private Health Insurance Ombudsman",
+    "is_resolution": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

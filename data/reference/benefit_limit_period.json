@@ -1,0 +1,46 @@
+[
+  {
+    "limit_period_id": 1,
+    "period_code": "CALENDAR",
+    "period_name": "Calendar Year",
+    "description": "Limits reset at the start of each calendar year on January 1st",
+    "reset_month": 1,
+    "reset_day": 1,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "limit_period_id": 2,
+    "period_code": "MEMBERSHIP",
+    "period_name": "Membership Year",
+    "description": "Limits reset on the anniversary of the member's policy start date",
+    "reset_month": null,
+    "reset_day": null,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "limit_period_id": 3,
+    "period_code": "LIFETIME",
+    "period_name": "Lifetime",
+    "description": "Limits apply for the entire lifetime of the membership and do not reset",
+    "reset_month": null,
+    "reset_day": null,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "limit_period_id": 4,
+    "period_code": "PER_SERVICE",
+    "period_name": "Per Service",
+    "description": "Limits apply individually to each service occurrence with no accumulation",
+    "reset_month": null,
+    "reset_day": null,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]

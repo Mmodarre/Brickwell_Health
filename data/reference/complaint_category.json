@@ -1,0 +1,167 @@
+[
+  {
+    "complaint_category_id": 1,
+    "category_code": "CLAIMS",
+    "category_name": "Claims",
+    "parent_category_id": null,
+    "sla_days": 30,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 2,
+    "category_code": "CLAIM_REJ",
+    "category_name": "Claim Rejection",
+    "parent_category_id": 1,
+    "sla_days": 21,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 3,
+    "category_code": "CLAIM_DELAY",
+    "category_name": "Claim Processing Delay",
+    "parent_category_id": 1,
+    "sla_days": 14,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 4,
+    "category_code": "BENEFIT",
+    "category_name": "Benefit Amount Dispute",
+    "parent_category_id": 1,
+    "sla_days": 21,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 5,
+    "category_code": "MEMBERSHIP",
+    "category_name": "Membership",
+    "parent_category_id": null,
+    "sla_days": 30,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 6,
+    "category_code": "PREMIUM",
+    "category_name": "Premium and Billing",
+    "parent_category_id": 5,
+    "sla_days": 14,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 7,
+    "category_code": "WAITING_PERIOD",
+    "category_name": "Waiting Period Dispute",
+    "parent_category_id": 5,
+    "sla_days": 21,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 8,
+    "category_code": "CLEARANCE",
+    "category_name": "Clearance Certificate Issues",
+    "parent_category_id": 5,
+    "sla_days": 14,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 9,
+    "category_code": "SERVICE",
+    "category_name": "Customer Service",
+    "parent_category_id": null,
+    "sla_days": 14,
+    "phio_reportable": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 10,
+    "category_code": "STAFF_CONDUCT",
+    "category_name": "Staff Conduct",
+    "parent_category_id": 9,
+    "sla_days": 14,
+    "phio_reportable": false,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 11,
+    "category_code": "INFO_ACCURACY",
+    "category_name": "Information Accuracy",
+    "parent_category_id": 9,
+    "sla_days": 14,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 12,
+    "category_code": "POLICY",
+    "category_name": "Policy and Cover",
+    "parent_category_id": null,
+    "sla_days": 21,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 13,
+    "category_code": "EXCLUSION",
+    "category_name": "Exclusion Dispute",
+    "parent_category_id": 12,
+    "sla_days": 21,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 14,
+    "category_code": "PEA",
+    "category_name": "Pre-Existing Ailment",
+    "parent_category_id": 12,
+    "sla_days": 30,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "complaint_category_id": 15,
+    "category_code": "PRIVACY",
+    "category_name": "Privacy and Data",
+    "parent_category_id": null,
+    "sla_days": 7,
+    "phio_reportable": true,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  }
+]
