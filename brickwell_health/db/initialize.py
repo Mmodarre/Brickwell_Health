@@ -11,12 +11,15 @@ import structlog
 
 from brickwell_health.config import load_config
 from brickwell_health.db.connection import create_engine_from_config
+from brickwell_health.db.reference_db_loader import load_reference_data
 
 logger = structlog.get_logger()
 
 
 # Schema files in dependency order (core tables must be created first)
 SCHEMA_FILES = [
+    # Reference data tables (no dependencies - must be first)
+    "schema_reference.sql",     # product, provider, hospital, benefit_category, etc.
     # Core domains (dependency order matters)
     "schema_policy.sql",        # member, application, policy, coverage, waiting_period
     "schema_regulatory.sql",    # lhc_loading, suspension, bank_account (depends on policy)
@@ -65,6 +68,16 @@ def init_database(
     logger.info("creating_tables")
     _execute_schema_files(engine)
 
+    # Load reference data from JSON files into reference tables
+    logger.info("loading_reference_data_from_json")
+    reference_path = Path(config.reference_data_path)
+    stats = load_reference_data(engine, reference_path)
+    logger.info("reference_data_loaded", stats=stats)
+
+    # Add foreign key constraints from transactional tables to reference tables
+    logger.info("adding_reference_foreign_key_constraints")
+    _execute_reference_fk_constraints(engine)
+
     if enable_cdc:
         _setup_cdc_slot(engine)
 
@@ -74,14 +87,14 @@ def init_database(
 def _execute_schema_files(engine) -> None:
     """Execute all schema SQL files in dependency order."""
     schema_dir = Path(__file__).parent
-    
+
     for schema_file in SCHEMA_FILES:
         schema_path = schema_dir / schema_file
         if schema_path.exists():
             logger.info("executing_schema_file", file=schema_file)
             with open(schema_path) as f:
                 schema_sql = f.read()
-            
+
             with engine.connect() as conn:
                 try:
                     conn.execute(text(schema_sql))
@@ -91,6 +104,34 @@ def _execute_schema_files(engine) -> None:
                     raise
         else:
             logger.warning("schema_file_not_found", file=schema_file)
+
+
+def _execute_reference_fk_constraints(engine) -> None:
+    """
+    Execute reference data foreign key constraints.
+
+    Adds FK constraints from transactional tables to reference tables.
+    Must be called AFTER reference data has been loaded.
+    """
+    schema_dir = Path(__file__).parent
+    fk_file = schema_dir / "schema_reference_fk.sql"
+
+    if not fk_file.exists():
+        logger.warning("reference_fk_file_not_found", file="schema_reference_fk.sql")
+        return
+
+    logger.info("executing_reference_fk_constraints")
+    with open(fk_file) as f:
+        fk_sql = f.read()
+
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(fk_sql))
+            conn.commit()
+            logger.info("reference_fk_constraints_added")
+        except Exception as e:
+            logger.error("reference_fk_constraint_error", error=str(e))
+            raise
 
 
 def _drop_all_tables(engine) -> None:
@@ -152,6 +193,27 @@ def _drop_all_tables(engine) -> None:
         "application",
         "member_update",
         "member",
+        # Reference Tables (drop last - they are referenced by FK constraints)
+        "provider_location",
+        "communication_template",
+        "complaint_category",
+        "case_type",
+        "interaction_outcome",
+        "interaction_type",
+        "mbs_item",
+        "prosthesis_list_item",
+        "extras_item_code",
+        "claim_rejection_reason",
+        "benefit_category",
+        "clinical_category",
+        "hospital",
+        "provider",
+        "excess_option",
+        "product",
+        "product_tier",
+        "campaign_type",
+        "survey_type",
+        "state_territory",
     ]
 
     with engine.connect() as conn:

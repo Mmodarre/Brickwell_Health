@@ -655,24 +655,51 @@ class SurveyProcess(BaseProcess):
             self._track_survey_sent(primary_member_id, "NPS")
 
     def _get_nps_trigger_key(self, event_type: str) -> Optional[str]:
-        """Map event type to NPS trigger config key."""
-        mapping = {
-            "claim_paid": "claim_paid",
-            "claim_rejected": "claim_rejected",
-            "interaction_completed": "interaction_completed",
-            "complaint_resolved": "complaint_resolved",
-        }
-        return mapping.get(event_type.lower())
+        """Map event type to NPS trigger config key using reference data lookup.
+
+        Validates that the event_type is a known survey trigger by looking it up
+        in the survey_type reference data.
+
+        Args:
+            event_type: The event type (e.g., "claim_paid", "ClaimPaid")
+
+        Returns:
+            The normalized trigger key (lowercase with underscores) if found, None otherwise.
+        """
+        survey_type_data = self.reference.get_survey_type_by_trigger_event(event_type)
+        if survey_type_data:
+            # Return the normalized event type as the trigger key
+            return event_type.lower()
+        return None
 
     def _get_nps_survey_type(self, event_type: str) -> SurveyType:
-        """Map event type to NPS survey type."""
-        mapping = {
-            "claim_paid": SurveyType.POST_CLAIM,
-            "claim_rejected": SurveyType.POST_CLAIM,
-            "interaction_completed": SurveyType.POST_INTERACTION,
-            "complaint_resolved": SurveyType.POST_COMPLAINT_RESOLUTION,
-        }
-        return mapping.get(event_type.lower(), SurveyType.POST_CLAIM)
+        """Map event type to NPS survey type using reference data lookup.
+
+        Looks up the survey type from reference data and converts the type_code
+        to the corresponding SurveyType enum value.
+
+        Args:
+            event_type: The event type (e.g., "claim_paid", "ClaimPaid")
+
+        Returns:
+            The corresponding SurveyType enum value, or POST_CLAIM as default.
+        """
+        survey_type_data = self.reference.get_survey_type_by_trigger_event(event_type)
+        if survey_type_data:
+            type_code = survey_type_data.get("type_code", "")
+            # Map JSON type_code to SurveyType enum
+            # JSON uses codes like POST_CLAIM, POST_COMPLAINT, POST_INTERACTION
+            # Enum uses POST_CLAIM, POST_COMPLAINT_RESOLUTION, POST_INTERACTION
+            type_code_to_enum = {
+                "POST_CLAIM": SurveyType.POST_CLAIM,
+                "POST_CLAIM_REJECTED": SurveyType.POST_CLAIM,
+                "POST_INTERACTION": SurveyType.POST_INTERACTION,
+                "POST_COMPLAINT": SurveyType.POST_COMPLAINT_RESOLUTION,
+                "POST_CASE": SurveyType.POST_INTERACTION,  # Case resolved maps to post-interaction
+                "ANNUAL": SurveyType.ANNUAL,
+            }
+            return type_code_to_enum.get(type_code, SurveyType.POST_CLAIM)
+        return SurveyType.POST_CLAIM
 
     def _is_survey_fatigued(self, member_id: UUID) -> bool:
         """Check if member has received too many surveys recently (max 2 per 30 days)."""

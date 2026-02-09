@@ -6,7 +6,8 @@
 scripts/
 brickwell_health.egg-info/
 data-download/
-data/
+data/checkpoints/
+data/streaming/
 poison.py
 docs/
 .cursor/
@@ -16,3 +17,7 @@ databricks.config
 Azure/deploy-brickwell.sh
 Azure/DEPLOYMENT_INFO.md
 config/simulation.yaml
+simulation_run.log
+.claude/
+.ruff_cache
+.mypy_cache

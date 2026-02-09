@@ -1,298 +1,220 @@
 # Brickwell Health Simulator
 
-Australian Private Health Insurance (PHI) discrete event simulation for generating realistic transactional data.
+A discrete event simulation engine that generates production-quality Australian Private Health Insurance (PHI) transactional data at scale.
 
 ## Overview
 
-Brickwell Health Simulator is a comprehensive simulation engine that generates realistic private health insurance data for an Australian health fund. It uses discrete event simulation (SimPy) to model the complete policy lifecycle including:
+Brickwell Health Simulator models the complete insurance lifecycle for an Australian health fund, producing realistic data across member acquisition, policy management, claims processing, billing, CRM interactions, digital behavior, NPS surveys, and Next Best Action (NBA) marketing. It uses [SimPy](https://simpy.readthedocs.io/) for discrete event simulation with a multi-worker parallel architecture.
 
-- Member acquisition and application processing
-- Policy management (upgrades, downgrades, suspensions, cancellations)
-- Claims generation (hospital, extras, ambulance)
-- Billing and payment processing
-- Australian regulatory compliance (LHC, MLS, PHI rebates)
-
-The simulator produces production-quality transactional data suitable for:
-- Data warehouse development and testing
-- Analytics and reporting system validation
-- Machine learning model training
-- Performance testing of insurance administration systems
+**Generated data is suitable for:**
+- Data warehouse and lakehouse development
+- Analytics, reporting, and BI system validation
+- Machine learning model training (churn, fraud detection, propensity)
+- Performance and load testing of insurance administration systems
 
 ## Features
 
 ### Simulation Engine
-- **Discrete Event Simulation**: Built on SimPy for accurate time-based event modeling
-- **Parallel Processing**: Multi-worker architecture with configurable parallelism
-- **Deterministic Reproducibility**: Seed-based random number generation for reproducible results
-- **Checkpoint Recovery**: Periodic checkpointing for crash recovery
+- **Discrete Event Simulation** built on SimPy for accurate time-based event modeling
+- **Multi-worker parallel architecture** with deterministic UUID-based entity partitioning
+- **Seed-based reproducibility** for identical results across runs
+- **Checkpoint and resume** with crash recovery and simulation extension
 
-### Data Generation
-- **Realistic Demographics**: Age-appropriate member generation using ABS demographic distributions
-- **Product Selection**: Intelligent product matching based on policy type, state, and member characteristics
-- **APRA-Validated Claims**: Claim frequencies and amounts calibrated to APRA 2024-2025 statistics
-- **Lognormal Hospital Claims**: 8.8% high-value claims (>$10k) with tiered distribution
+### Data Domains
+
+| Domain | Process | What It Generates |
+|--------|---------|-------------------|
+| **Acquisition** | AcquisitionProcess | Applications, members, policies, coverages, waiting periods |
+| **Policy Lifecycle** | PolicyLifecycleProcess | Upgrades, downgrades, cancellations with churn modeling |
+| **Member Lifecycle** | MemberLifecycleProcess | Address changes, phone/email updates, death events, Medicare renewals |
+| **Suspensions** | SuspensionProcess | Overseas travel and financial hardship suspensions |
+| **Claims** | ClaimsProcess | Hospital, extras, and ambulance claims with APRA-validated distributions |
+| **Billing** | BillingProcess | Invoices, payments, direct debits, arrears, and lapses |
+| **CRM** | CRMProcess | Interactions, cases, and complaints triggered by lifecycle events |
+| **Communications** | CommunicationProcess | Transactional and marketing communications with response tracking |
+| **Digital Behavior** | DigitalBehaviorProcess | Web sessions and digital events |
+| **Surveys** | SurveyProcess | NPS/CSAT surveys with LLM-enriched context for realistic responses |
+| **Next Best Action** | NBAActionProcess | Retention, upsell, cross-sell recommendations with behavioral effects |
+
+### Fraud Generation
+- **9 distinct fraud types** based on published healthcare fraud research (NHCAA, APRA)
+- Configurable fraud rates with labeled data for ML training
+- Disabled by default; see [Fraud Generation](#fraud-generation) for details
 
 ### Regulatory Compliance
-- **Lifetime Health Cover (LHC)**: Age-of-entry based loading calculations
-- **Age-Based Discount**: Discounts for members joining aged 18-29
+- **Lifetime Health Cover (LHC)**: 2% loading per year over age 30 at entry (max 70%)
+- **Age-Based Discount**: Up to 10% for members aged 18-29
 - **PHI Rebate**: Income-tested rebate tiers with age bracket adjustments
 - **Medicare Levy Surcharge (MLS)**: Retention factor in churn model
-- **Waiting Periods**: Standard (2/6/12 month) and transfer-aware waiting periods
+- **Waiting Periods**: Standard 2/6/12-month and transfer-aware waiting periods
 
-### Churn Modeling
-- **Age-Based Rates**: Research-validated churn rates (22% young adults → 3% elderly)
-- **Retention Factors**: LHC lock-in, MLS avoidance, tenure-based retention
-- **Behavioral Triggers**: Life events, claim denials, perceived value assessment
-- **Cancellation Reasons**: Weighted sampling based on policy conditions
+### Database
+- **PostgreSQL COPY** batch writing (10-100x faster than INSERT)
+- Dependency-ordered flushing (parents before children)
+- Optional CDC replication slot for change data capture
 
-### Database Integration
-- **PostgreSQL COPY**: High-performance batch writing (10-100x faster than INSERT)
-- **Dependency-Ordered Flushing**: Automatic parent-before-child table writes
-- **Buffer Management**: In-memory buffering with configurable batch sizes
+## Quick Start
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CLI (brickwell)                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                            ParallelRunner                                   │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │  Worker 0   │  │  Worker 1   │  │  Worker 2   │  │  Worker N   │         │
-│  │             │  │             │  │             │  │             │         │
-│  │ SimEnv      │  │ SimEnv      │  │ SimEnv      │  │ SimEnv      │         │
-│  │ Processes   │  │ Processes   │  │ Processes   │  │ Processes   │         │
-│  │ BatchWriter │  │ BatchWriter │  │ BatchWriter │  │ BatchWriter │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                            PostgreSQL Database                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Core Components
-
-| Component | Description |
-|-----------|-------------|
-| **SimulationEnvironment** | SimPy wrapper with datetime conversion and progress tracking |
-| **SimulationWorker** | Orchestrates processes within a single worker |
-| **SharedState** | In-memory state shared between processes (policies, members, invoices) |
-| **BatchWriter** | High-performance PostgreSQL COPY writer with buffering |
-| **CheckpointManager** | Periodic state persistence for crash recovery |
-
-### Simulation Processes
-
-| Process | Responsibility |
-|---------|----------------|
-| **AcquisitionProcess** | Generates applications, creates policies and members |
-| **PolicyLifecycleProcess** | Handles upgrades, downgrades, cancellations |
-| **SuspensionProcess** | Manages overseas travel and hardship suspensions |
-| **ClaimsProcess** | Generates hospital, extras, and ambulance claims |
-| **BillingProcess** | Creates invoices, processes payments, manages arrears |
-
-### Statistical Models
-
-| Model | Purpose |
-|-------|---------|
-| **ChurnPredictionModel** | Age-based churn with log-odds adjustments |
-| **ClaimPropensityModel** | Poisson frequency, lognormal severity |
-| **ProductSelectionModel** | Intelligent product matching |
-| **ABSDemographicsModel** | Australian age/state/gender distributions |
-| **IncomeModel** | Income estimation for rebate calculations |
-
-## Installation
-
-### Requirements
+### Prerequisites
 - Python 3.12+
-- PostgreSQL 14+
+- Docker (for PostgreSQL)
 
-### Install from Source
+### 1. Clone and install
 
 ```bash
-# Clone repository
 git clone https://github.com/brickwell-health/simulator.git
 cd simulator
 
-# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
+source .venv/bin/activate
 
-# Install package
-pip install -e .
-
-# For development
-pip install -e ".[dev]"
+pip install -e .          # Core dependencies
+pip install -e ".[dev]"   # Optional: adds pytest, ruff, mypy
 ```
 
-### Dependencies
-
-**Core:**
-- `simpy>=4.1.1` - Discrete event simulation
-- `sqlalchemy>=2.0.25` - Database abstraction
-- `psycopg[binary]>=3.1.17` - PostgreSQL adapter
-- `pydantic>=2.5.3` - Data validation
-- `numpy>=1.26.3` - Numerical operations
-- `faker>=22.0.0` - Realistic data generation
-
-**Utilities:**
-- `click>=8.1.7` - CLI framework
-- `structlog>=24.1.0` - Structured logging
-- `pyyaml>=6.0.1` - Configuration parsing
-
-### Docker Setup (PostgreSQL)
-
-The project includes a `docker-compose.yml` for quickly spinning up a PostgreSQL database.
-
-#### Start the Database
+### 2. Start PostgreSQL
 
 ```bash
-# Start PostgreSQL in the background
-docker-compose up -d
-
-# Check container status
-docker-compose ps
-
-# View logs
-docker-compose logs -f postgres
+docker compose up -d
 ```
 
-#### Connection Details
-
-| Setting | Value |
-|---------|-------|
-| Host | `localhost` |
-| Port | `5432` |
-| Database | `brickwell_health` |
-| Username | `brickwell` |
-| Password | `brickwell_dev` |
-
-#### Database Management
+### 3. Configure and initialize
 
 ```bash
-# Connect to database via psql
+cp config/simulation.yaml.example config/simulation.yaml   # Create config from example
+brickwell -c config/simulation.yaml init-db                 # Initialize database schema
+```
+
+Edit `config/simulation.yaml` to adjust target member count, simulation dates, and other parameters.
+
+### 4. Run the simulation
+
+```bash
+brickwell -c config/simulation.yaml run
+```
+
+That's it. The simulator will create members, policies, claims, billing, and all other domains based on your configuration. Output is written directly to PostgreSQL.
+
+### 5. Query results
+
+```bash
 docker exec -it brickwell_health_db psql -U brickwell -d brickwell_health
 
-# Stop the database (preserves data)
-docker-compose stop
-
-# Start again
-docker-compose start
-
-# Stop and remove container (preserves data in volume)
-docker-compose down
-
-# Stop and remove container AND data volume (full reset)
-docker-compose down -v
-
-# Rebuild container (after postgres version changes)
-docker-compose up -d --build
+-- Check what was generated
+SELECT COUNT(*) FROM member;
+SELECT COUNT(*) FROM policy;
+SELECT COUNT(*) FROM claim;
 ```
 
-#### Initialize Schema
+## CLI Reference
 
-Once the database is running, initialize the schema:
+```
+brickwell [OPTIONS] COMMAND [ARGS]
+```
+
+**Global options:**
+
+| Flag | Description |
+|------|-------------|
+| `-c, --config PATH` | Path to configuration YAML file |
+| `-v, --verbose` | Enable debug-level logging |
+| `--json-logs` | Output structured JSON logs |
+
+**Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `run` | Run the simulation |
+| `init-db` | Initialize database schema |
+| `validate-config` | Validate configuration file |
+| `status` | Check simulation and database status |
+| `process-surveys` | Process pending surveys with LLM |
+
+### `run`
 
 ```bash
-# Initialize database tables
-brickwell -c config/simulation.yaml init-db
-
-# Or drop and recreate (for fresh start)
-brickwell -c config/simulation.yaml init-db --drop-existing
+brickwell run [OPTIONS]
 ```
 
-#### Health Check
+| Flag | Description |
+|------|-------------|
+| `-w, --workers N` | Number of worker processes |
+| `--sequential` | Run workers sequentially (debugging) |
+| `--resume` | Resume from last checkpoint |
+| `--extend-days N` | Extend simulation by N days (requires `--resume`) |
+| `--end-date DATE` | Override end date (YYYY-MM-DD) |
 
-The container includes a health check that verifies PostgreSQL is ready:
+### `init-db`
 
 ```bash
-# Check health status
-docker inspect --format='{{.State.Health.Status}}' brickwell_health_db
-# Should return: healthy
+brickwell init-db [OPTIONS]
 ```
 
-#### Data Persistence
+| Flag | Description |
+|------|-------------|
+| `--drop-existing` | Drop all tables before creating (interactive confirmation) |
+| `--enable-cdc` | Create CDC replication slot (requires `wal_level=logical`) |
 
-Data is persisted in a Docker volume named `brickwell_pgdata`. This means:
-- Data survives container restarts (`docker-compose stop/start`)
-- Data survives container removal (`docker-compose down`)
-- Data is only deleted with `docker-compose down -v`
-
-To backup the volume:
+### `process-surveys`
 
 ```bash
-# Backup
-docker run --rm -v brickwell_pgdata:/data -v $(pwd):/backup alpine \
-  tar czf /backup/brickwell_pgdata_backup.tar.gz -C /data .
-
-# Restore
-docker run --rm -v brickwell_pgdata:/data -v $(pwd):/backup alpine \
-  tar xzf /backup/brickwell_pgdata_backup.tar.gz -C /data
+brickwell process-surveys [OPTIONS]
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--batch-size N` | Surveys per LLM batch |
+| `--dry-run` | Preview without making changes |
 
 ## Configuration
 
-Configuration is managed via YAML files with Pydantic validation.
+Configuration is managed via YAML with Pydantic validation. Copy the example to get started:
 
-### Example Configuration
+```bash
+cp config/simulation.yaml.example config/simulation.yaml
+```
+
+### Key Sections
+
+| Section | Description |
+|---------|-------------|
+| `simulation` | Time boundaries (`start_date`, `end_date`, `warmup_days`) |
+| `scale` | Target population (`target_member_count`, `target_growth_rate`, `target_churn_rate`) |
+| `acquisition` | Channel distribution, approval rates |
+| `policy` | Policy type and tier distributions |
+| `claims` | Claim frequencies, amounts, approval rates |
+| `billing` | Payment processing, arrears thresholds, lapse timing |
+| `events` | Lifecycle event rates (upgrade, downgrade, cancellation) |
+| `member_lifecycle` | Demographic change rates (address, phone, death) |
+| `crm` | CRM interaction and case generation |
+| `communication` | Marketing campaigns and response tracking |
+| `digital` | Web session and digital event generation |
+| `survey` | NPS/CSAT survey triggers and response rates |
+| `nba` | Next Best Action catalog and execution rules |
+| `fraud` | Fraud injection rates and type weights (disabled by default) |
+| `database` | PostgreSQL connection settings and batch size |
+| `parallel` | Worker count and checkpoint interval |
+| `llm` | Databricks AI configuration for survey processing |
+
+### Minimal Example
 
 ```yaml
 simulation:
   start_date: "2020-01-01"
   end_date: "2025-12-31"
-  warmup_days: 730  # 2 years to build population
+  warmup_days: 730   # Build initial population before steady-state simulation begins
 
 scale:
-  target_member_count: 100000
-  target_growth_rate: 0.03  # 3% annual growth
-  target_churn_rate: 0.10   # 10% annual churn
-
-acquisition:
-  channels:
-    Online: 0.45
-    Phone: 0.25
-    Broker: 0.20
-    Corporate: 0.10
-  approval_rate: 0.92
-
-policy:
-  type_distribution:
-    Single: 0.35
-    Couple: 0.25
-    Family: 0.30
-    SingleParent: 0.10
-  tier_distribution:
-    Gold: 0.20
-    Silver: 0.35
-    Bronze: 0.30
-    Basic: 0.15
-
-claims:
-  hospital_frequency:
-    "18-30": 0.3
-    "31-45": 0.5
-    "46-60": 1.2
-    "61-70": 2.0
-    "71+": 2.5
-  high_claim_probability: 0.088
-  approval:
-    hospital_approval_rate: 0.98
-    extras_approval_rate: 0.92
-    ambulance_approval_rate: 0.95
-
-billing:
-  final_payment_success_rate: 0.95
-  max_debit_retries: 2
-  retry_interval_days: 3
-  days_to_arrears: 14
-  days_to_suspension: 30
-  days_to_lapse: 60
+  target_member_count: 10000
+  target_growth_rate: 0.03
+  target_churn_rate: 0.10
 
 database:
   host: localhost
   port: 5432
   database: brickwell_health
   username: brickwell
-  password: ""
+  password: brickwell_dev
   batch_size: 10000
 
 parallel:
@@ -300,84 +222,54 @@ parallel:
   checkpoint_interval_minutes: 15
 
 seed: 42
-reference_data_path: data/reference
 ```
 
-### Configuration Sections
+All other sections have sensible defaults and can be omitted.
 
-| Section | Description |
-|---------|-------------|
-| `simulation` | Time boundaries and warmup period |
-| `scale` | Target population and growth rates |
-| `acquisition` | Channel distribution and approval rates |
-| `policy` | Policy type and tier distributions |
-| `claims` | Claim frequencies, amounts, approval rates |
-| `churn` | Churn model parameters |
-| `events` | Lifecycle event rates (upgrade/downgrade/suspend) |
-| `billing` | Payment processing and arrears thresholds |
-| `database` | PostgreSQL connection settings |
-| `parallel` | Worker count and checkpoint interval |
+## Architecture
 
-## Usage
-
-### CLI Commands
-
-```bash
-# Run simulation with default config
-brickwell run
-
-# Run with custom config
-brickwell -c config/production.yaml run
-
-# Run with specified workers
-brickwell run --workers 8
-
-# Run sequentially (for debugging)
-brickwell run --sequential
-
-# Initialize database schema
-brickwell init-db
-
-# Drop and recreate tables
-brickwell init-db --drop-existing
-
-# Validate configuration
-brickwell validate-config
-
-# Check simulation status
-brickwell status
-
-# Enable verbose logging
-brickwell -v run
-
-# JSON log output
-brickwell --json-logs run
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         CLI (brickwell)                         │
+├─────────────────────────────────────────────────────────────────┤
+│                        ParallelRunner                           │
+│  ┌─────────────┐  ┌─────────────┐       ┌─────────────┐        │
+│  │  Worker 0   │  │  Worker 1   │  ...  │  Worker N   │        │
+│  │             │  │             │       │             │        │
+│  │ SimEnv      │  │ SimEnv      │       │ SimEnv      │        │
+│  │ SharedState │  │ SharedState │       │ SharedState │        │
+│  │ 11 Processes│  │ 11 Processes│       │ 11 Processes│        │
+│  │ BatchWriter │  │ BatchWriter │       │ BatchWriter │        │
+│  └─────────────┘  └─────────────┘       └─────────────┘        │
+├─────────────────────────────────────────────────────────────────┤
+│                      PostgreSQL Database                        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Programmatic Usage
+Each worker simulates a partition of entities independently. Workers don't communicate during simulation — they write to the database independently using high-performance COPY operations.
 
-```python
-from brickwell_health.config import load_config
-from brickwell_health.core.parallel_runner import ParallelRunner
+### Core Components
 
-# Load configuration
-config = load_config("config/simulation.yaml")
+| Component | Description |
+|-----------|-------------|
+| **ParallelRunner** | Orchestrates worker processes and aggregates results |
+| **SimulationWorker** | Initializes RNG, processes, and batch writer for a single partition |
+| **SimulationEnvironment** | SimPy wrapper with datetime conversion and progress tracking |
+| **SharedState** | In-memory state shared between processes within a single worker |
+| **BatchWriter** | PostgreSQL COPY writer with in-memory buffering |
+| **CheckpointManager** | Periodic state persistence for crash recovery and resume |
 
-# Create runner
-runner = ParallelRunner(config)
+### Statistical Models
 
-# Run simulation
-results = runner.run()
-
-# Access results
-print(f"Members created: {results['acquisition']['members_created']:,}")
-print(f"Policies created: {results['acquisition']['policies_created']:,}")
-print(f"Total claims: {sum(results['database_writes'].get(t, 0) for t in ['claim'])}")
-```
+| Model | Purpose |
+|-------|---------|
+| **ChurnPredictionModel** | Age-based churn with LHC, MLS, tenure, and behavioral adjustments |
+| **ClaimPropensityModel** | Poisson frequency + lognormal/tiered severity distributions |
+| **ProductSelectionModel** | Product matching by policy type, state, and member characteristics |
+| **ABSDemographicsModel** | Australian age, state, and gender distributions from ABS data |
+| **IncomeModel** | Income estimation for PHI rebate tier calculations |
 
 ## Domain Model
-
-### Entity Relationship Overview
 
 ```
 MEMBER ─────────┬──────── POLICY_MEMBER ──────── POLICY
@@ -386,238 +278,158 @@ MEMBER ─────────┬──────── POLICY_MEMBER ─�
                 │                                  ├── WAITING_PERIOD
                 │                                  ├── SUSPENSION
                 │                                  ├── INVOICE ──── PAYMENT
-                │                                  └── DIRECT_DEBIT_MANDATE
+                │                                  ├── DIRECT_DEBIT_MANDATE
+                │                                  └── NBA_RECOMMENDATION ──── NBA_EXECUTION
                 │
-                └──────── CLAIM ─────┬──── CLAIM_LINE
-                                     ├──── HOSPITAL_ADMISSION ──── MEDICAL_SERVICE
-                                     │                         └── PROSTHESIS_CLAIM
-                                     ├──── EXTRAS_CLAIM
-                                     └──── AMBULANCE_CLAIM
+                ├──────── CLAIM ─────┬──── CLAIM_LINE
+                │                    ├──── HOSPITAL_ADMISSION
+                │                    ├──── EXTRAS_CLAIM
+                │                    └──── AMBULANCE_CLAIM
+                │
+                ├──────── CRM_INTERACTION
+                ├──────── CRM_CASE ──── CRM_COMPLAINT
+                ├──────── COMMUNICATION
+                ├──────── WEB_SESSION ──── DIGITAL_EVENT
+                └──────── NPS_SURVEY / CSAT_SURVEY
 ```
 
 ### Key Entities
 
 | Entity | Description |
 |--------|-------------|
-| **Member** | Individual person with demographics, contact, Medicare info |
+| **Member** | Individual with demographics, contact info, Medicare details |
 | **Policy** | Insurance policy with product, tier, premium, effective dates |
-| **PolicyMember** | Link between member and policy with role (Primary/Partner/Dependent) |
-| **Coverage** | Specific coverage on a policy (Hospital/Extras/Ambulance) |
-| **WaitingPeriod** | Waiting period tracking for benefits |
-| **Claim** | Claim header with totals and status |
-| **HospitalAdmission** | Hospital-specific claim details (DRG, LOS, charges) |
-| **ExtrasClaimDetails** | Extras-specific claim details (service type, provider) |
-| **Invoice** | Billing invoice with amounts and status |
-| **Payment** | Payment transaction record |
-| **Suspension** | Policy suspension record (overseas/hardship) |
+| **PolicyMember** | Links member to policy with role (Primary/Partner/Dependent) |
+| **Coverage** | Specific coverage type on a policy (Hospital/Extras/Ambulance) |
+| **Claim** | Claim header with totals, status, and optional fraud metadata |
+| **Invoice / Payment** | Billing documents and payment transactions |
+| **Interaction / Case** | CRM interactions and support cases |
+| **Communication** | Outbound messages with channel and response tracking |
+| **NPS/CSAT Survey** | Feedback surveys with LLM-generated context |
+| **NBA Recommendation** | Next Best Action with execution and behavioral effects |
 
-### Enumerations
+## Fraud Generation
 
-| Enum | Values |
-|------|--------|
-| **PolicyStatus** | Active, Suspended, Cancelled, Lapsed |
-| **PolicyType** | Single, Couple, Family, SingleParent |
-| **CoverageTier** | Gold, Silver, Bronze, Basic |
-| **ClaimType** | Hospital, Extras, Ambulance |
-| **ClaimStatus** | Submitted, Assessed, Approved, Rejected, Paid |
-| **DenialReason** | NoCoverage, LimitsExhausted, WaitingPeriod, PolicyExclusions, PreExisting |
+The simulator includes a configurable fraud injection system that generates realistic fraudulent claims for ML model training and fraud detection testing. **Fraud is disabled by default.**
 
-## Data Generation Logic
+### Enabling Fraud
 
-### Member Acquisition
-
-1. **Rate Calculation**:
-   - Warmup: `target_members / warmup_days / approval_rate / avg_members_per_policy`
-   - Steady: `(growth_rate + churn_rate) * policies / 365 / approval_rate`
-
-2. **Application Flow**:
-   ```
-   Select Channel → Generate Members → Select Product → Create Application
-        ↓                                                      ↓
-   Decision Time (1-14 days)                           Health Declaration
-        ↓
-   Approve/Decline
-        ↓ (if approved)
-   Create Policy → Create Coverages → Create Waiting Periods → Setup Billing
-   ```
-
-### Claims Generation
-
-**Hospital Claims (Poisson + Lognormal + High-Value Tiers)**:
-```
-Frequency by Age:
-  18-30: λ=0.3/year
-  31-45: λ=0.5/year
-  46-60: λ=1.2/year
-  61-70: λ=2.0/year
-  71+:   λ=2.5/year
-
-Amount Distribution:
-  91.2%: Lognormal(μ=8.0, σ=1.5) → median ~$2,981
-  8.8%:  High-value tiers:
-         - $10k-$20k: 63.4%
-         - $20k-$30k: 23.1%
-         - $30k-$50k: 7.0%
-         - $50k-$100k: 3.1%
-         - $100k-$200k: 0.24%
-         - $200k-$450k: 0.02%
+```yaml
+fraud:
+  enabled: true
+  fraud_rate: 0.06                    # 6% of claims are fraudulent
+  fraud_prone_member_rate: 0.03       # 3% of members are fraud-prone
+  fraud_prone_provider_rate: 0.02     # 2% of providers are fraud-prone
+  fraud_prone_claim_multiplier: 5.0   # Fraud-prone entities have 5x higher fraud rate
 ```
 
-**Extras Claims**:
-```
-Dental:
-  - Preventative: λ=2.0, mean=$175, std=$35
-  - General: λ=0.5, mean=$280, std=$90
-  - Major: λ=0.1, mean=$1,300, std=$450
+### 9 Fraud Types
 
-Other Services:
-  - Optical: λ=0.8, mean=$350
-  - Physiotherapy: λ=1.5, mean=$85 (×1.5 for 65+)
-  - Chiropractic: λ=1.2, mean=$70
-  - Ambulance: λ=0.02, mean=$950
+| Type | Weight | Description |
+|------|--------|-------------|
+| **DRG Upcoding** | 25% | Shifts hospital claims to higher complexity DRG codes (1.3-1.7x) |
+| **Extras Upcoding** | 15% | Inflates extras service charges (20-150% increase) |
+| **Phantom Billing** | 10% | Bills for services never rendered, including fraud ring patterns |
+| **Provider Outlier** | 20% | Abnormal claim frequency (2-3x) and amount inflation |
+| **Unbundling** | 8% | Splits single services into 2-3 fragments with total inflation |
+| **Exact Duplicate** | 6% | Identical claim submitted twice (7-30 day delay) |
+| **Near Duplicate** | 6% | Slightly modified duplicate (+/-5% amount, shifted dates) |
+| **Temporal Anomaly** | 5% | Claims on public holidays, impossible timelines |
+| **Geographic Anomaly** | 5% | Service location inconsistent with member/provider geography |
+
+All fraud claims are labeled with `is_fraudulent=true`, `fraud_type`, and detailed metadata for supervised learning.
+
+See [docs/fraud_implementation.md](docs/fraud_implementation.md) for full configuration and methodology.
+
+## Next Best Action (NBA)
+
+The NBA system generates personalized marketing actions across the customer lifecycle, creating realistic recommendation-to-execution data pipelines.
+
+### How It Works
+
+1. **Catalog**: Predefined actions across 5 categories (Retention, Upsell, Cross-Sell, Service, Wellness)
+2. **Recommendations**: Generated based on policy events (churn risk, anniversary, claim patterns)
+3. **Execution**: Delivered via Email, SMS, Phone, In-App, Letter, or Web
+4. **Behavioral Effects**: Retention and upsell actions create multipliers that influence churn and upgrade probabilities in the PolicyLifecycleProcess
+
+### Configuration
+
+```yaml
+nba:
+  enabled: true
+  contact_policy:
+    cooldown_days: 7
+    max_actions_per_month: 4
 ```
 
-### Churn Model
+### Generated Tables
 
-**Age-Based Annual Rates**:
-```
-18-24: 22%    45-49: 8%     70-74: 3%
-25-29: 18%    50-54: 7%     75-79: 3%
-30-34: 14%    55-59: 6%     80+:   4%
-35-39: 11%    60-64: 5%
-40-44: 9%     65-69: 4%
-```
+| Table | Description |
+|-------|-------------|
+| `nba_action_catalog` | Master catalog of available actions |
+| `nba_recommendation` | Recommendations with status tracking |
+| `nba_execution` | Execution records with response and outcome |
 
-**Adjustments**:
-- LHC Loading: ×0.80 (20% reduction)
-- MLS Subject: ×0.85 (15% reduction)
-- 10+ Years Tenure: ×0.80 (20% reduction)
-- Q2 Premium Increase: ×1.15 (15% increase)
-- No Recent Claims: +0.10 log-odds
-- Dissatisfied: +0.15 log-odds
-- Life Event: +0.25 log-odds
-- High Claims Value: -0.10 log-odds
+## LLM Survey Processing
+
+The simulator generates NPS and CSAT survey records with rich contextual data (member demographics, claim history, interaction history, trigger events). These can be enriched with LLM-generated responses using Databricks `ai_query`.
+
+### Two-Phase Approach
+
+1. **During simulation**: Creates pending survey records with `llm_context` JSON
+2. **Post-simulation**: Run `brickwell process-surveys` to generate realistic scores, sentiment, and feedback text via Databricks `ai_query`
+
+Set `process_after_simulation: true` to automatically trigger LLM processing when the simulation finishes, or leave it `false` and run `brickwell process-surveys` manually. Without LLM processing, pending surveys remain in the database with context but no generated responses.
+
+### Configuration
+
+```yaml
+llm:
+  model: "databricks-meta-llama-3-1-70b-instruct"
+  batch_size: 50
+  process_after_simulation: false   # Set true to auto-process after simulation
+  databricks:
+    host: "your-workspace.cloud.databricks.com"
+    http_path: "/sql/1.0/warehouses/your-warehouse-id"
+    token: ""  # Or set DATABRICKS_TOKEN env var
+```
 
 ## Performance
 
 ### Benchmarks (M1 MacBook Pro, 10 cores)
 
-| Scenario | Workers | Members | Duration | Time | Speed |
-|----------|---------|---------|----------|------|-------|
-| Small | 4 | 10,000 | 5 years | ~30s | ~60 days/sec |
-| Medium | 8 | 100,000 | 5 years | ~5min | ~6 days/sec |
-| Large | 16 | 1,000,000 | 5 years | ~1hr | ~0.5 days/sec |
+| Scenario | Workers | Members | Duration | Time |
+|----------|---------|---------|----------|------|
+| Small | 4 | 10,000 | 5 years | ~30s |
+| Medium | 8 | 100,000 | 5 years | ~5min |
+| Large | 16 | 1,000,000 | 5 years | ~1hr |
 
-### Optimization Tips
+### Tips
 
-1. **Increase Workers**: Scale with available CPU cores
-2. **Larger Batch Size**: Reduce flush frequency (but increase memory)
-3. **SSD Storage**: Database writes benefit from fast I/O
-4. **Disable Indexes**: Create indexes after bulk load
-5. **Unlogged Tables**: For transient test data
+- Scale workers with available CPU cores (`--workers N`)
+- Increase `database.batch_size` for fewer flushes (trades memory for speed)
+- Use `--sequential` mode for debugging
+- Delete checkpoints for a clean start: `rm -rf data/checkpoints/`
 
 ## Testing
 
 ```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=brickwell_health --cov-report=html
-
-# Run specific test module
-pytest tests/test_claims.py
-
-# Run in parallel
-pytest -n auto
-
-# Run with verbose output
-pytest -v
+pytest                                          # Run all tests
+pytest --cov=brickwell_health --cov-report=html # With coverage
+pytest tests/unit/test_claims_generator.py      # Specific module
+pytest -n auto                                  # Parallel execution
 ```
-
-## Project Structure
-
-```
-brickwell_health/
-├── __init__.py              # Package metadata
-├── cli.py                   # Command-line interface
-├── config/
-│   ├── loader.py            # YAML configuration loading
-│   ├── models.py            # Pydantic configuration models
-│   ├── regulatory.py        # Regulatory calculation helpers
-│   └── validation.py        # Configuration validation
-├── core/
-│   ├── environment.py       # SimPy environment wrapper
-│   ├── parallel_runner.py   # Multi-worker orchestration
-│   ├── worker.py            # Single worker process
-│   ├── shared_state.py      # Cross-process state container
-│   ├── checkpoint.py        # Checkpoint management
-│   ├── partition.py         # Entity partitioning
-│   └── processes/
-│       ├── base.py          # Base process class
-│       ├── acquisition.py   # Member acquisition
-│       ├── policy_lifecycle.py  # Upgrades/downgrades/cancellations
-│       ├── suspension.py    # Policy suspensions
-│       ├── claims.py        # Claims generation
-│       └── billing.py       # Invoicing and payments
-├── domain/
-│   ├── enums.py             # Domain enumerations
-│   ├── member.py            # Member models
-│   ├── policy.py            # Policy models
-│   ├── coverage.py          # Coverage models
-│   ├── claims.py            # Claim models
-│   ├── billing.py           # Billing models
-│   └── application.py       # Application models
-├── generators/
-│   ├── base.py              # Base generator class
-│   ├── member_generator.py  # Member data generation
-│   ├── policy_generator.py  # Policy creation
-│   ├── coverage_generator.py    # Coverage assignment
-│   ├── claims_generator.py  # Claim data generation
-│   ├── billing_generator.py # Invoice/payment generation
-│   ├── waiting_period_generator.py  # Waiting period creation
-│   ├── regulatory_generator.py  # LHC/rebate records
-│   ├── application_generator.py  # Application creation
-│   └── id_generator.py      # UUID and number generation
-├── statistics/
-│   ├── churn_model.py       # Churn prediction
-│   ├── claim_propensity.py  # Claim frequency/severity
-│   ├── product_selection.py # Product matching
-│   ├── abs_demographics.py  # Australian demographics
-│   ├── income_model.py      # Income estimation
-│   └── distributions.py     # Statistical distributions
-├── db/
-│   ├── connection.py        # Database connection management
-│   └── writer.py            # Batch writer with COPY
-├── reference/
-│   ├── loader.py            # Reference data loading
-│   └── models.py            # Reference data models
-└── utils/
-    ├── calendar.py          # Business day calculations
-    ├── logging.py           # Structured logging setup
-    └── time_conversion.py   # Date/time utilities
-```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit changes (`git commit -m 'Add your feature'`)
+4. Push to branch (`git push origin feature/your-feature`)
 5. Open a Pull Request
 
-### Code Style
-- Python 3.12+ type hints
-- Ruff for linting/formatting
-- MyPy for type checking
-- Docstrings for all public functions
+**Code standards:** Python 3.12+ type hints, [Ruff](https://docs.astral.sh/ruff/) for formatting/linting, [MyPy](https://mypy-lang.org/) for type checking.
 
-## Acknowledgments
+## License
 
-- APRA Private Health Insurance Statistics
-- Australian Bureau of Statistics demographic data
-- SimPy discrete event simulation library
+MIT License - see [LICENSE](LICENSE) for details.

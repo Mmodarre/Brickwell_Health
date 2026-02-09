@@ -127,7 +127,7 @@ class TestNPSSurveyPendingCreate:
         db_dict = pending.model_dump_db()
 
         # Enums should be converted to their string values
-        assert db_dict["survey_type"] == "PostClaim"
+        assert db_dict["survey_type"] == "POST_CLAIM"
         assert db_dict["processing_status"] == "pending"
 
 
@@ -196,7 +196,7 @@ class TestNPSSurveyCreate:
 
         db_dict = survey.model_dump_db()
 
-        assert db_dict["survey_type"] == "Annual"
+        assert db_dict["survey_type"] == "ANNUAL"
         assert db_dict["nps_category"] == "Passive"
         assert db_dict["sentiment_label"] == "Neutral"
         assert db_dict["survey_channel"] == "Email"
@@ -245,7 +245,7 @@ class TestCSATSurveyPendingCreate:
 
         db_dict = pending.model_dump_db()
 
-        assert db_dict["survey_type"] == "PostComplaintResolution"
+        assert db_dict["survey_type"] == "POST_COMPLAINT"
         assert db_dict["processing_status"] == "completed"
 
 
@@ -302,7 +302,7 @@ class TestSurveyResponsePredictor:
     def test_predict_nps_response_returns_tuple(self, response_predictor):
         """Test that prediction returns (bool, float) tuple."""
         context = {
-            "survey_type": "PostClaim",
+            "survey_type": "POST_CLAIM",
             "tenure_months": 24,
             "member_age": 45,
         }

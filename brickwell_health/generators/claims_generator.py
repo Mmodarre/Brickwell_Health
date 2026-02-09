@@ -48,134 +48,20 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
     Generates claims for policy members.
     """
 
-    # Denial reason ID mapping - must match claim_rejection_reason.json
-    DENIAL_REASON_IDS = {
-        DenialReason.NO_COVERAGE: 1,
-        DenialReason.LIMITS_EXHAUSTED: 2,
-        DenialReason.WAITING_PERIOD: 3,
-        DenialReason.POLICY_EXCLUSIONS: 4,
-        DenialReason.PRE_EXISTING: 5,
-        DenialReason.PROVIDER_ISSUES: 6,
-        DenialReason.ADMINISTRATIVE: 7,
-        DenialReason.MEMBERSHIP_INACTIVE: 8,
-    }
-
     # Prosthesis-eligible procedures by DRG prefix and their probability of having prosthesis
-    # Key: DRG prefix, Value: (probability, prosthesis_types)
+    # Key: DRG prefix, Value: (probability, prosthesis_category_patterns)
+    # Category patterns are used to match prosthesis_list_item.category_description
     PROSTHESIS_PROCEDURES = {
-        "I03": (0.95, ["hip_replacement"]),  # Hip replacement
-        "I04": (0.95, ["knee_replacement"]),  # Knee replacement
-        "I08": (0.80, ["spinal_fusion"]),  # Spinal procedures
-        "I18": (0.70, ["joint_implant"]),  # Other joint procedures
-        "F01": (0.85, ["pacemaker", "cardiac_device"]),  # Pacemaker/ICD
-        "F05": (0.75, ["cardiac_stent"]),  # Cardiac catheterization
-        "F10": (0.60, ["cardiac_valve"]),  # Cardiac valve procedures
-        "D01": (0.90, ["cochlear_implant"]),  # Cochlear implant
-        "G02": (0.40, ["hernia_mesh"]),  # Hernia repair
-        "J10": (0.30, ["lens_implant"]),  # Cataract/lens
-    }
-
-    # Prosthesis item catalog (simplified - billing code, description, avg cost range)
-    # Calibrated to ~40% of original values to match APRA/IHACPA prosthesis benefit data
-    PROSTHESIS_CATALOG = {
-        "hip_replacement": [
-            ("HIP001", "Total Hip Prosthesis - Cemented", (3200, 6000)),
-            ("HIP002", "Total Hip Prosthesis - Uncemented", (4000, 7200)),
-            ("HIP003", "Hip Resurfacing Prosthesis", (3600, 5600)),
-        ],
-        "knee_replacement": [
-            ("KNE001", "Total Knee Prosthesis - Standard", (2800, 4800)),
-            ("KNE002", "Total Knee Prosthesis - High Flex", (3600, 6000)),
-            ("KNE003", "Unicompartmental Knee Prosthesis", (2400, 4000)),
-        ],
-        "spinal_fusion": [
-            ("SPN001", "Spinal Fusion Cage - Cervical", (1200, 2400)),
-            ("SPN002", "Spinal Fusion Cage - Lumbar", (1600, 3200)),
-            ("SPN003", "Pedicle Screw System", (2000, 4800)),
-        ],
-        "joint_implant": [
-            ("JNT001", "Shoulder Prosthesis", (2400, 4800)),
-            ("JNT002", "Ankle Prosthesis", (2000, 4000)),
-            ("JNT003", "Elbow Prosthesis", (2000, 3600)),
-        ],
-        "pacemaker": [
-            ("PAC001", "Single Chamber Pacemaker", (1600, 3200)),
-            ("PAC002", "Dual Chamber Pacemaker", (2400, 4800)),
-            ("PAC003", "Pacemaker Lead", (600, 1200)),
-        ],
-        "cardiac_device": [
-            ("ICD001", "Implantable Cardioverter Defibrillator", (6000, 14000)),
-            ("ICD002", "ICD Lead", (1200, 2400)),
-        ],
-        "cardiac_stent": [
-            ("STN001", "Drug Eluting Stent", (800, 2000)),
-            ("STN002", "Bare Metal Stent", (400, 1000)),
-            ("STN003", "Coronary Stent - Bioresorbable", (1200, 2800)),
-        ],
-        "cardiac_valve": [
-            ("VAL001", "Mechanical Heart Valve", (3200, 6000)),
-            ("VAL002", "Bioprosthetic Heart Valve", (4000, 8000)),
-            ("VAL003", "TAVR Valve", (10000, 16000)),
-        ],
-        "cochlear_implant": [
-            ("COC001", "Cochlear Implant System", (8000, 14000)),
-            ("COC002", "Cochlear Implant Processor", (3200, 6000)),
-        ],
-        "hernia_mesh": [
-            ("HRN001", "Hernia Mesh - Synthetic", (200, 600)),
-            ("HRN002", "Hernia Mesh - Biological", (600, 1600)),
-        ],
-        "lens_implant": [
-            ("LNS001", "Intraocular Lens - Monofocal", (120, 320)),
-            ("LNS002", "Intraocular Lens - Multifocal", (400, 1000)),
-            ("LNS003", "Intraocular Lens - Toric", (320, 800)),
-        ],
-    }
-
-    # Common MBS items by provider type and clinical category
-    # (mbs_item_number, description, schedule_fee_range, typical_charge_multiplier)
-    # Fee ranges calibrated to ~40% of original to match PHI fund benefit portions
-    MBS_ITEMS_BY_PROVIDER = {
-        "Surgeon": [
-            ("30001", "Initial consultation", (35, 60), 1.5),
-            ("30003", "Subsequent consultation", (18, 35), 1.5),
-            ("30571", "Surgical procedure - minor", (80, 200), 2.0),
-            ("30572", "Surgical procedure - intermediate", (200, 480), 2.0),
-            ("30573", "Surgical procedure - major", (480, 1200), 2.5),
-            ("35503", "Orthopaedic procedure", (600, 1600), 2.5),
-            ("35506", "Joint procedure - major", (800, 2000), 2.5),
-            ("37800", "Abdominal surgery", (400, 1200), 2.0),
-            ("38200", "Cardiac surgery", (1200, 3200), 2.5),
-        ],
-        "Anesthetist": [
-            ("20100", "Anaesthesia - basic", (60, 120), 1.3),
-            ("20110", "Anaesthesia - intermediate", (120, 240), 1.3),
-            ("20120", "Anaesthesia - complex", (240, 480), 1.5),
-            ("20200", "Epidural anaesthesia", (160, 320), 1.5),
-            ("20500", "Post-operative pain management", (40, 100), 1.3),
-        ],
-        "Assistant": [
-            ("51300", "Surgical assistant - minor", (40, 100), 1.2),
-            ("51303", "Surgical assistant - intermediate", (80, 160), 1.2),
-            ("51306", "Surgical assistant - major", (160, 320), 1.3),
-        ],
-        "Physician": [
-            ("104", "Initial consultation - physician", (60, 120), 1.5),
-            ("105", "Subsequent consultation", (30, 60), 1.5),
-            ("116", "Specialist consultation", (80, 160), 1.8),
-            ("132", "Emergency consultation", (100, 200), 2.0),
-        ],
-        "Pathology": [
-            ("65070", "Blood tests - basic panel", (12, 32), 1.0),
-            ("65120", "Blood tests - comprehensive", (32, 80), 1.0),
-            ("73525", "Histopathology", (40, 120), 1.0),
-        ],
-        "Radiology": [
-            ("57506", "X-ray", (20, 60), 1.2),
-            ("57700", "CT scan", (80, 240), 1.3),
-            ("63001", "MRI scan", (120, 320), 1.3),
-            ("57960", "Ultrasound", (32, 80), 1.2),
-        ],
+        "I03": (0.95, ["hip"]),  # Hip replacement
+        "I04": (0.95, ["knee"]),  # Knee replacement
+        "I08": (0.80, ["spinal", "spine"]),  # Spinal procedures
+        "I18": (0.70, ["joint", "shoulder", "ankle", "elbow"]),  # Other joint procedures
+        "F01": (0.85, ["pacemaker", "cardiac"]),  # Pacemaker/ICD
+        "F05": (0.75, ["stent", "cardiac"]),  # Cardiac catheterization
+        "F10": (0.60, ["valve", "cardiac"]),  # Cardiac valve procedures
+        "D01": (0.90, ["cochlear", "implant"]),  # Cochlear implant
+        "G02": (0.40, ["hernia", "mesh"]),  # Hernia repair
+        "J10": (0.30, ["lens", "intraocular"]),  # Cataract/lens
     }
 
     # Provider types likely to be involved by admission type
@@ -227,6 +113,222 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
         self.propensity = ClaimPropensityModel(rng, reference, config)
+
+        # Load reference data from database
+        self._load_denial_reason_mapping()
+        self._load_prosthesis_catalog()
+        self._load_mbs_items_by_provider()
+
+    def _load_denial_reason_mapping(self) -> None:
+        """Load claim rejection reasons from reference data."""
+        rejection_reasons = self.reference.get_claim_rejection_reasons()
+
+        # Build mapping from reason_code to rejection_reason_id
+        self.denial_reason_ids = {}
+        for reason in rejection_reasons:
+            reason_code = reason.get("reason_code", "").upper()
+            reason_id = reason.get("rejection_reason_id")
+
+            # Map DenialReason enum values to rejection_reason_id
+            # Match by reason_code (e.g., "NO_COVERAGE" -> DenialReason.NO_COVERAGE)
+            if reason_code == "NO_COVERAGE":
+                self.denial_reason_ids[DenialReason.NO_COVERAGE] = reason_id
+            elif reason_code == "LIMITS_EXHAUSTED":
+                self.denial_reason_ids[DenialReason.LIMITS_EXHAUSTED] = reason_id
+            elif reason_code == "WAITING_PERIOD":
+                self.denial_reason_ids[DenialReason.WAITING_PERIOD] = reason_id
+            elif reason_code == "POLICY_EXCLUSIONS":
+                self.denial_reason_ids[DenialReason.POLICY_EXCLUSIONS] = reason_id
+            elif reason_code == "PRE_EXISTING":
+                self.denial_reason_ids[DenialReason.PRE_EXISTING] = reason_id
+            elif reason_code == "PROVIDER_ISSUES":
+                self.denial_reason_ids[DenialReason.PROVIDER_ISSUES] = reason_id
+            elif reason_code == "ADMINISTRATIVE":
+                self.denial_reason_ids[DenialReason.ADMINISTRATIVE] = reason_id
+            elif reason_code == "MEMBERSHIP_INACTIVE":
+                self.denial_reason_ids[DenialReason.MEMBERSHIP_INACTIVE] = reason_id
+
+    def _load_prosthesis_catalog(self) -> None:
+        """Load prosthesis items from reference data and build catalog by category patterns."""
+        prosthesis_items = self.reference.get_prosthesis_items()
+
+        # Build category_id -> patterns lookup from prosthesis_category.json
+        prosthesis_categories = self.reference.get_prosthesis_categories()
+        category_patterns: dict[int, list[str]] = {
+            cat["prosthesis_category_id"]: cat.get("patterns", [])
+            for cat in prosthesis_categories
+        }
+
+        # Build catalog grouped by category patterns (for PROSTHESIS_PROCEDURES mapping)
+        # Structure: {pattern: [(item_id, billing_code, description, min_benefit, max_benefit), ...]}
+        self.prosthesis_catalog: dict[str, list[tuple]] = {}
+
+        for item in prosthesis_items:
+            item_id = item.get("prosthesis_item_id")
+            billing_code = item.get("billing_code", "")
+            description = item.get("item_name", "")
+            min_benefit = float(item.get("minimum_benefit") or 0)
+            max_benefit = float(item.get("maximum_benefit") or 0)
+
+            # Look up patterns from category data
+            category_id = item.get("prosthesis_category_id")
+            patterns = category_patterns.get(category_id, [])
+
+            # Add to catalog under each matching pattern
+            for pattern in patterns:
+                if pattern not in self.prosthesis_catalog:
+                    self.prosthesis_catalog[pattern] = []
+                self.prosthesis_catalog[pattern].append(
+                    (item_id, billing_code, description, min_benefit, max_benefit)
+                )
+
+    def _load_mbs_items_by_provider(self) -> None:
+        """Load MBS items from reference data and group by provider type."""
+        mbs_items = self.reference.get_mbs_items()
+
+        # Build category_id -> provider_type lookup from mbs_category.json
+        mbs_categories = self.reference.get_mbs_categories()
+        category_provider_types: dict[int, str | None] = {
+            cat["mbs_category_id"]: cat.get("provider_type")
+            for cat in mbs_categories
+        }
+
+        # Charge multipliers by provider type
+        charge_multipliers = {
+            "Surgeon": 1.8,
+            "Anesthetist": 1.3,
+            "Assistant": 1.2,
+            "Physician": 1.5,
+            "Pathology": 1.0,
+            "Radiology": 1.2,
+        }
+
+        # Build MBS items grouped by provider type
+        # Structure: {provider_type: [(item_code, description, min_fee, max_fee, charge_multiplier), ...]}
+        self.mbs_items_by_provider: dict[str, list[tuple]] = {
+            pt: [] for pt in charge_multipliers
+        }
+
+        for item in mbs_items:
+            item_code = item.get("item_number", "")
+            description = item.get("item_description", "")
+            schedule_fee = float(item.get("schedule_fee") or 0)
+
+            # Look up provider type from category data
+            category_id = item.get("category_id")
+            provider_type = category_provider_types.get(category_id)
+
+            if provider_type and provider_type in charge_multipliers:
+                charge_multiplier = charge_multipliers[provider_type]
+                # Higher-fee surgeons get a larger multiplier
+                if provider_type == "Surgeon" and schedule_fee > 400:
+                    charge_multiplier = 2.0
+
+                # Generate fee range (+/- 20% of schedule fee)
+                min_fee = schedule_fee * 0.8
+                max_fee = schedule_fee * 1.2
+
+                self.mbs_items_by_provider[provider_type].append(
+                    (item_code, description, min_fee, max_fee, charge_multiplier)
+                )
+
+    def _select_provider(
+        self,
+        provider_type: str | None = None,
+        state: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Select a real provider from reference data.
+
+        Args:
+            provider_type: Optional provider type filter
+            state: Optional state code filter
+
+        Returns:
+            Provider dict with provider_id, provider_number, etc.
+        """
+        providers = self.reference.get_providers_by_type_and_state(
+            provider_type=provider_type,
+            state=state,
+            active_only=True,
+        )
+
+        if not providers:
+            # Fallback: get any active provider
+            providers = self.reference.get_providers(active_only=True)
+
+        if providers:
+            return self.rng.choice(providers)
+
+        # Ultimate fallback: return a fake provider dict
+        return {
+            "provider_id": 1,
+            "provider_number": f"PRV{self.uniform_int(100000, 999999)}",
+            "provider_name": "Unknown Provider",
+        }
+
+    def _select_hospital(
+        self,
+        state: str | None = None,
+        has_icu: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Select a real hospital from reference data.
+
+        Args:
+            state: Optional state code filter
+            has_icu: If True, only select hospitals with ICU
+
+        Returns:
+            Hospital dict with hospital_id, hospital_name, etc.
+        """
+        hospitals = self.reference.get_hospitals_by_state(
+            state=state,
+            has_icu=has_icu if has_icu else None,
+            active_only=True,
+        )
+
+        if not hospitals:
+            # Fallback: get any active hospital
+            hospitals = self.reference.get_hospitals(active_only=True)
+
+        if hospitals:
+            return self.rng.choice(hospitals)
+
+        # Ultimate fallback: return a fake hospital dict
+        return {
+            "hospital_id": 1,
+            "hospital_name": "Unknown Hospital",
+        }
+
+    def _select_extras_item(
+        self,
+        service_type: str,
+    ) -> dict[str, Any]:
+        """
+        Select a real extras item code from reference data.
+
+        Args:
+            service_type: Service type name (e.g., "Dental", "Optical")
+
+        Returns:
+            Extras item dict with extras_item_id, item_code, typical_fee, etc.
+        """
+        items = self.reference.get_extras_items_by_service_type(
+            service_type=service_type,
+            active_only=True,
+        )
+
+        if items:
+            return self.rng.choice(items)
+
+        # Fallback: return a fake item dict
+        return {
+            "extras_item_id": 1,
+            "item_code": "000",
+            "item_description": f"{service_type} Service",
+            "typical_fee": 50.0,
+        }
 
     def generate(self, **kwargs: Any) -> ClaimCreate:
         """
@@ -299,6 +401,14 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         )
         gap_amount = charge_amount - benefit_amount
 
+        # Select a real provider from reference data
+        member_state = getattr(member, "state", None)
+        selected_provider = self._select_provider(state=member_state)
+        provider_id = selected_provider.get("provider_id")
+
+        # Select a real extras item from reference data
+        selected_extras_item = self._select_extras_item(service_type)
+
         # Claim header - created as SUBMITTED for lifecycle transitions
         claim = ClaimCreate(
             claim_id=claim_id,
@@ -312,7 +422,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             lodgement_date=service_date,
             assessment_date=None,  # Set during lifecycle transition
             payment_date=None,     # Set during lifecycle transition
-            provider_id=self.uniform_int(1, 1000),
+            provider_id=provider_id,
             hospital_id=None,
             total_charge=charge_amount,
             total_benefit=benefit_amount,
@@ -355,14 +465,14 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             created_by="SIMULATION",
         )
 
-        # Extras claim detail
+        # Extras claim detail - use real extras item from reference data
         extras_claim = ExtrasClaimCreate(
             extras_claim_id=extras_claim_id,
             claim_id=claim_id,
             claim_line_id=claim_line_id,
             service_type=service_type,
             dental_service_type=dental_service_type,
-            extras_item_id=self.uniform_int(1, 500),
+            extras_item_id=selected_extras_item.get("extras_item_id", 1),
             provider_id=claim.provider_id,
             provider_location_id=None,
             service_date=service_date,
@@ -469,6 +579,13 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         # Member gap for hospital claims is the excess amount they pay out-of-pocket
         gap_amount = excess_applied
 
+        # Select a real hospital from reference data based on member's state
+        member_state = getattr(member, "state", None)
+        # Emergency admissions may need ICU
+        needs_icu = admission_type == AdmissionType.EMERGENCY and self.bernoulli(0.1)
+        selected_hospital = self._select_hospital(state=member_state, has_icu=needs_icu)
+        hospital_id = selected_hospital.get("hospital_id")
+
         # Claim header - created as SUBMITTED for lifecycle transitions
         claim = ClaimCreate(
             claim_id=claim_id,
@@ -483,7 +600,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             assessment_date=None,  # Set during lifecycle transition
             payment_date=None,     # Set during lifecycle transition
             provider_id=None,
-            hospital_id=self.uniform_int(1, 200),
+            hospital_id=hospital_id,
             total_charge=total_charge,
             total_benefit=benefit_amount,
             total_gap=gap_amount,
@@ -676,7 +793,9 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             item_code = self._get_extras_item_code(service_type, None)
             item_description = f"{service_type} service (rejected)"
             benefit_category_id = self._get_benefit_category_id(service_type)
-            provider_id = self.uniform_int(1, 1000)
+            # Select real provider from reference data
+            selected_provider = self._select_provider()
+            provider_id = selected_provider.get("provider_id")
             hospital_id = None
         elif claim_type == ClaimType.HOSPITAL:
             charge_amount = Decimal(str(round(
@@ -687,7 +806,9 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             item_description = "Hospital admission (rejected)"
             benefit_category_id = None
             provider_id = None
-            hospital_id = self.uniform_int(1, 200)
+            # Select real hospital from reference data
+            selected_hospital = self._select_hospital()
+            hospital_id = selected_hospital.get("hospital_id")
         else:  # AMBULANCE
             charge_amount = Decimal(str(round(
                 self.propensity.sample_claim_amount("Ambulance"), 2
@@ -762,9 +883,9 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             denial_reason: DenialReason enum value
 
         Returns:
-            Integer ID matching claim_rejection_reason.json
+            Integer ID matching claim_rejection_reason table
         """
-        return self.DENIAL_REASON_IDS.get(denial_reason, 1)
+        return self.denial_reason_ids.get(denial_reason, 1)
 
     def _sample_admission_type(self, age: int) -> AdmissionType:
         """Sample admission type based on age."""
@@ -875,7 +996,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                     weights = [0.25, 0.25, 0.10, 0.10, 0.10, 0.05, 0.05, 0.02, 0.05, 0.03]
                 else:
                     weights = [0.10, 0.10, 0.15, 0.10, 0.15, 0.10, 0.10, 0.05, 0.10, 0.05]
-                # Normalize weights
+                # Normalize weights to match available prefixes
                 weights = [w / sum(weights) for w in weights[:len(drg_prefixes)]]
                 selected_prefix = self.choice(drg_prefixes, weights)
                 return f"{selected_prefix}Z"
@@ -914,32 +1035,32 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         if drg_prefix not in self.PROSTHESIS_PROCEDURES:
             return prosthesis_claims, total_charge
 
-        probability, prosthesis_types = self.PROSTHESIS_PROCEDURES[drg_prefix]
+        probability, prosthesis_patterns = self.PROSTHESIS_PROCEDURES[drg_prefix]
 
         # Check if prosthesis is used in this case
         if self.rng.random() > probability:
             return prosthesis_claims, total_charge
 
-        # Select prosthesis type
-        prosthesis_type = self.choice(prosthesis_types)
+        # Select prosthesis pattern and get matching items
+        # Find patterns that have items in our catalog
+        available_patterns = [p for p in prosthesis_patterns if p in self.prosthesis_catalog and self.prosthesis_catalog[p]]
 
-        if prosthesis_type not in self.PROSTHESIS_CATALOG:
+        if not available_patterns:
             return prosthesis_claims, total_charge
 
-        # Get items for this prosthesis type
-        items = self.PROSTHESIS_CATALOG[prosthesis_type]
+        prosthesis_pattern = self.choice(available_patterns)
+        items = self.prosthesis_catalog[prosthesis_pattern]
 
         # Usually 1-2 items per procedure (e.g., implant + lead for pacemaker)
         num_items = 1 if len(items) == 1 else self.uniform_int(1, min(2, len(items)))
-        
-        # Select random indices to pick items (avoid numpy array issues with tuples)
+
+        # Select random indices to pick items
         indices = self.rng.choice(len(items), size=num_items, replace=False)
         selected_items = [items[i] for i in indices]
 
-        for idx, (billing_code, description, cost_range) in enumerate(selected_items):
-            # Generate charge within range
-            min_cost, max_cost = cost_range
-            charge_amount = Decimal(str(round(self.rng.uniform(min_cost, max_cost), 2)))
+        for idx, (item_id, billing_code, description, min_benefit, max_benefit) in enumerate(selected_items):
+            # Generate charge within benefit range
+            charge_amount = Decimal(str(round(self.rng.uniform(min_benefit, max_benefit), 2)))
 
             # Prosthesis benefit is typically the full charge (no-gap arrangement)
             benefit_amount = charge_amount
@@ -949,7 +1070,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 prosthesis_claim_id=self.id_generator.generate_uuid(),
                 claim_id=claim_id,
                 admission_id=admission_id,
-                prosthesis_item_id=self.uniform_int(1000, 9999),
+                prosthesis_item_id=item_id,  # Use actual item_id from reference table
                 billing_code=billing_code,
                 item_description=description,
                 quantity=1,
@@ -999,7 +1120,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 continue
 
             # Get MBS items for this provider type
-            mbs_items = self.MBS_ITEMS_BY_PROVIDER.get(provider_type, [])
+            mbs_items = self.mbs_items_by_provider.get(provider_type, [])
             if not mbs_items:
                 continue
 
@@ -1008,8 +1129,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             indices = self.rng.choice(len(mbs_items), size=num_items, replace=False)
             selected_items = [mbs_items[i] for i in indices]
 
-            for mbs_item_number, description, fee_range, charge_multiplier in selected_items:
-                min_fee, max_fee = fee_range
+            for mbs_item_number, description, min_fee, max_fee, charge_multiplier in selected_items:
                 schedule_fee = Decimal(str(round(self.rng.uniform(min_fee, max_fee), 2)))
 
                 # Charge is typically higher than MBS fee
@@ -1032,6 +1152,11 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                     # Adjust fund benefit to cover the difference
                     fund_benefit = charge_amount - medicare_benefit
 
+                # Select a real provider from reference data
+                selected_provider = self._select_provider(provider_type=provider_type)
+                provider_id = selected_provider.get("provider_id")
+                provider_number = selected_provider.get("provider_number", f"PRV{self.uniform_int(100000, 999999)}")
+
                 medical_service = MedicalServiceCreate(
                     medical_service_id=self.id_generator.generate_uuid(),
                     claim_id=claim_id,
@@ -1039,9 +1164,9 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                     mbs_item_number=mbs_item_number,
                     mbs_item_description=description,
                     mbs_schedule_fee=schedule_fee,
-                    provider_id=self.uniform_int(1, 5000),
+                    provider_id=provider_id,
                     provider_type=provider_type,
-                    provider_number=f"PRV{self.uniform_int(100000, 999999)}",
+                    provider_number=provider_number,
                     service_date=service_date,
                     service_text=f"{provider_type} service - {description}",
                     charge_amount=charge_amount,

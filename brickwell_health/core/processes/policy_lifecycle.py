@@ -163,6 +163,10 @@ class PolicyLifecycleProcess(BaseProcess):
         Cancellation probability is calculated using ChurnPredictionModel based on
         member age, tenure, claims history, and retention factors.
 
+        NBA behavioral effects are applied:
+        - churn_reduction: Multiplies cancel probability (< 1.0 reduces churn)
+        - upgrade_boost: Multiplies upgrade probability (> 1.0 increases upgrades)
+
         Args:
             policy: Policy data dictionary
             current_date: Current simulation date
@@ -172,12 +176,50 @@ class PolicyLifecycleProcess(BaseProcess):
         """
         rand = self.rng.random()
 
-        # Calculate churn probability using the model
+        # Calculate base churn probability using the model
         cancel_daily = self._get_churn_probability(policy, current_date)
+
+        # Start with base upgrade rate
+        upgrade_daily = self.upgrade_daily
+
+        # Apply NBA behavioral effects if SharedState available
+        policy_id = self._get_policy_id(policy)
+        if self.shared_state and policy_id:
+            current_datetime = self.sim_env.current_datetime
+
+            # Apply churn_reduction effect (multiplier < 1.0 reduces churn)
+            churn_multiplier = self.shared_state.get_nba_effect_multiplier(
+                policy_id=policy_id,
+                effect_type="churn_reduction",
+                default=1.0,
+                current_datetime=current_datetime,
+            )
+            if churn_multiplier != 1.0:
+                cancel_daily *= churn_multiplier
+                logger.debug(
+                    "nba_churn_reduction_applied",
+                    policy_id=str(policy_id),
+                    multiplier=churn_multiplier,
+                )
+
+            # Apply upgrade_boost effect (multiplier > 1.0 increases upgrades)
+            upgrade_multiplier = self.shared_state.get_nba_effect_multiplier(
+                policy_id=policy_id,
+                effect_type="upgrade_boost",
+                default=1.0,
+                current_datetime=current_datetime,
+            )
+            if upgrade_multiplier != 1.0:
+                upgrade_daily *= upgrade_multiplier
+                logger.debug(
+                    "nba_upgrade_boost_applied",
+                    policy_id=str(policy_id),
+                    multiplier=upgrade_multiplier,
+                )
 
         cumulative = 0.0
         for event, rate in [
-            ("upgrade", self.upgrade_daily),
+            ("upgrade", upgrade_daily),
             ("downgrade", self.downgrade_daily),
             ("cancel", cancel_daily),
             ("suspend", self.suspend_daily),
@@ -257,22 +299,77 @@ class PolicyLifecycleProcess(BaseProcess):
 
     def _get_claims_history(self, policy: dict) -> dict:
         """
-        Get claims history for a policy.
+        Build claims history from rolling 12-month event logs.
+
+        Reads event logs written by ClaimsProcess._update_policy_claims_stats()
+        and computes derived metrics for ChurnPredictionModel.
+
+        Args:
+            policy: Policy data dictionary (from SharedState.active_policies)
+
+        Returns:
+            Dictionary with claims history metrics
+        """
+        current_date = self.sim_env.current_date
+        cutoff = current_date - timedelta(days=365)
+
+        # days_since_last_claim: computed from stored date (not windowed)
+        last_claim_date = policy.get("last_claim_date")
+        if last_claim_date is not None:
+            days_since = (current_date - last_claim_date).days
+        else:
+            days_since = None
+
+        # Prune and compute from paid claim log (rolling 12 months)
+        paid_log = [e for e in policy.get("paid_claim_log", []) if e[0] >= cutoff]
+        policy["paid_claim_log"] = paid_log
+
+        total_claims_amount = sum(e[1] for e in paid_log)
+        cumulative_gap = sum(e[2] for e in paid_log)
+
+        # Prune and compute from denial log (rolling 12 months)
+        denial_log = [d for d in policy.get("denial_log", []) if d >= cutoff]
+        policy["denial_log"] = denial_log
+        denial_count = len(denial_log)
+
+        # high_out_of_pocket: cumulative gap vs configurable threshold
+        high_oop_threshold = 500.0
+        if self.config and hasattr(self.config, "churn"):
+            high_oop_threshold = getattr(
+                self.config.churn, "high_oop_threshold", 500.0
+            )
+
+        return {
+            "days_since_last_claim": days_since,
+            "denial_count": denial_count,
+            "high_out_of_pocket": cumulative_gap > high_oop_threshold,
+            "total_claims_amount": total_claims_amount,
+        }
+
+    def _get_policy_id(self, policy: dict) -> UUID | None:
+        """
+        Extract policy_id from policy data dictionary.
+
+        The policy dict structure varies - policy_id may be stored directly
+        or nested inside a policy object.
 
         Args:
             policy: Policy data dictionary
 
         Returns:
-            Dictionary with claims history metrics
+            Policy UUID or None if not found
         """
-        # This is a simplified implementation
-        # In a full implementation, this would query actual claims data
-        return {
-            "days_since_last_claim": policy.get("days_since_last_claim"),
-            "denial_count": policy.get("denial_count", 0),
-            "high_out_of_pocket": policy.get("high_out_of_pocket", False),
-            "total_claims_amount": policy.get("total_claims_amount", 0),
-        }
+        # Try direct key first
+        policy_id = policy.get("policy_id")
+        if policy_id:
+            return policy_id
+
+        # Fall back to nested policy object
+        policy_obj = policy.get("policy")
+        if policy_obj and hasattr(policy_obj, "policy_id"):
+            return policy_obj.policy_id
+
+        return None
 
     def _build_product_tier_lookups(self) -> None:
         """Build lookups for product tiers from reference data."""

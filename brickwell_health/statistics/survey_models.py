@@ -44,7 +44,7 @@ class SurveyResponsePredictor:
             Tuple of (will_respond, probability)
         """
         # Get base response rate by survey type
-        survey_type = context.get("survey_type", "PostClaim")
+        survey_type = context.get("survey_type", "POST_CLAIM")
 
         nps_config = self.config.get("nps", {})
         triggers = nps_config.get("triggers", {})

@@ -127,6 +127,31 @@ class SharedState:
     pending_campaign_responses: dict[UUID, dict[str, Any]] = field(default_factory=dict)
 
     # =========================================================================
+    # FRAUD Domain Fields
+    # =========================================================================
+
+    # Fraud-prone members: member_id -> True
+    # Flagged at acquisition time with configurable probability
+    fraud_prone_members: dict[UUID, bool] = field(default_factory=dict)
+
+    # Fraud-prone providers: provider_id -> True
+    # Selected at worker init time from reference providers
+    fraud_prone_providers: dict[int, bool] = field(default_factory=dict)
+
+    # Active fraud rings: fraud_ring_id -> list of member_ids
+    # Used by phantom billing to coordinate ring behavior
+    fraud_rings: dict[UUID, list[UUID]] = field(default_factory=dict)
+
+    # Recent legitimate claims eligible for duplication: rolling window
+    # Structure: {"claim_id": UUID, "policy_id": UUID, "member_id": UUID,
+    #   "coverage_id": UUID, "claim_type": str, "service_date": date,
+    #   "total_charge": Decimal, "provider_id": int|None, "hospital_id": int|None,
+    #   "claim_channel": str, "lodgement_date": date}
+    recent_claims_for_duplication: deque[dict[str, Any]] = field(
+        default_factory=lambda: deque(maxlen=500)
+    )
+
+    # =========================================================================
     # NBA (Next Best Action) Domain Fields
     # =========================================================================
 
@@ -156,6 +181,35 @@ class SharedState:
     #     "source_recommendation_id": UUID,
     # }
     nba_active_effects: dict[UUID, list[dict[str, Any]]] = field(default_factory=dict)
+
+    # =========================================================================
+    # Fraud Helper Methods
+    # =========================================================================
+
+    def is_fraud_prone_member(self, member_id: UUID) -> bool:
+        """Check if a member is flagged as fraud-prone."""
+        return self.fraud_prone_members.get(member_id, False)
+
+    def is_fraud_prone_provider(self, provider_id: int) -> bool:
+        """Check if a provider is flagged as fraud-prone."""
+        return self.fraud_prone_providers.get(provider_id, False)
+
+    def add_claim_for_duplication(self, claim_snapshot: dict[str, Any]) -> None:
+        """Add a legitimate claim to the duplication pool."""
+        self.recent_claims_for_duplication.append(claim_snapshot)
+
+    def get_duplicate_source_claims(
+        self,
+        member_id: UUID | None = None,
+        claim_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get eligible source claims for duplication fraud."""
+        claims = list(self.recent_claims_for_duplication)
+        if member_id:
+            claims = [c for c in claims if c["member_id"] == member_id]
+        if claim_type:
+            claims = [c for c in claims if c["claim_type"] == claim_type]
+        return claims
 
     def add_policy(
         self,
@@ -283,6 +337,10 @@ class SharedState:
             "nba_action_queue": len(self.nba_action_queue),
             "members_with_nba_execution_history": len(self.nba_execution_history),
             "policies_with_nba_effects": len(self.nba_active_effects),
+            "fraud_prone_members": len(self.fraud_prone_members),
+            "fraud_prone_providers": len(self.fraud_prone_providers),
+            "active_fraud_rings": len(self.fraud_rings),
+            "duplication_pool_size": len(self.recent_claims_for_duplication),
         }
 
     def add_member_change_event(

@@ -398,6 +398,15 @@ class AcquisitionProcess(BaseProcess):
                     },
                 )
 
+                # Flag member as fraud-prone based on config probability
+                fraud_config = getattr(self.config, "fraud", None)
+                if (
+                    fraud_config
+                    and fraud_config.enabled
+                    and self.rng.random() < fraud_config.fraud_prone_member_rate
+                ):
+                    self.shared_state.fraud_prone_members[member.member_id] = True
+
                 # Register waiting periods
                 wp_tuples = all_waiting_periods.get(pm.policy_member_id, [])
                 self.shared_state.add_waiting_periods(

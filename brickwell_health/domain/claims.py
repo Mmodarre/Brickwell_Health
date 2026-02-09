@@ -16,6 +16,7 @@ from brickwell_health.domain.enums import (
     AdmissionType,
     AccommodationType,
     DentalServiceType,
+    FraudType,
 )
 
 
@@ -58,12 +59,39 @@ class ClaimCreate(BaseModel):
     modified_at: Optional[datetime] = None
     modified_by: Optional[str] = None
 
+    # Fraud metadata (None/False for legitimate claims)
+    is_fraud: bool = Field(default=False)
+    fraud_type: Optional[FraudType] = None
+    fraud_original_charge: Optional[Decimal] = None
+    fraud_inflation_amount: Optional[Decimal] = None
+    fraud_inflation_ratio: Optional[Decimal] = None
+    fraud_source_claim_id: Optional[UUID] = None
+    fraud_ring_id: Optional[UUID] = None
+
     def model_dump_db(self) -> dict:
         """Convert to dictionary for database insertion."""
         data = self.model_dump()
-        data["claim_type"] = data["claim_type"].value if isinstance(data["claim_type"], ClaimType) else data["claim_type"]
-        data["claim_status"] = data["claim_status"].value if isinstance(data["claim_status"], ClaimStatus) else data["claim_status"]
-        data["claim_channel"] = data["claim_channel"].value if isinstance(data["claim_channel"], ClaimChannel) else data["claim_channel"]
+        data["claim_type"] = (
+            data["claim_type"].value
+            if isinstance(data["claim_type"], ClaimType)
+            else data["claim_type"]
+        )
+        data["claim_status"] = (
+            data["claim_status"].value
+            if isinstance(data["claim_status"], ClaimStatus)
+            else data["claim_status"]
+        )
+        data["claim_channel"] = (
+            data["claim_channel"].value
+            if isinstance(data["claim_channel"], ClaimChannel)
+            else data["claim_channel"]
+        )
+        if data.get("fraud_type") is not None:
+            data["fraud_type"] = (
+                data["fraud_type"].value
+                if isinstance(data["fraud_type"], FraudType)
+                else data["fraud_type"]
+            )
         return data
 
 

@@ -4,6 +4,29 @@
 -- These placeholder records allow tracking claim attempts by members without coverage
 -- while maintaining referential integrity. Used when uncovered_claim_attempt_rate > 0.
 
+-- Placeholder product (required for FK constraints on placeholder policy/coverage)
+INSERT INTO product (
+    product_id,
+    product_code,
+    product_name,
+    product_type_id,
+    is_hospital,
+    is_extras,
+    is_ambulance,
+    status,
+    created_by
+) VALUES (
+    0,
+    'SYSTEM-PLACEHOLDER',
+    'System Placeholder Product',
+    0,
+    FALSE,
+    FALSE,
+    FALSE,
+    'System',
+    'SYSTEM'
+) ON CONFLICT (product_id) DO NOTHING;
+
 -- Placeholder policy (system record, not a real policy)
 INSERT INTO policy (
     policy_id,

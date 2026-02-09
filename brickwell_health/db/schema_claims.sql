@@ -38,7 +38,16 @@ CREATE TABLE IF NOT EXISTS claim (
     created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by              VARCHAR(50) NOT NULL DEFAULT 'SIMULATION',
     modified_at             TIMESTAMP,
-    modified_by             VARCHAR(50)
+    modified_by             VARCHAR(50),
+
+    -- Fraud metadata (NULL for legitimate claims)
+    is_fraud                BOOLEAN DEFAULT FALSE,
+    fraud_type              VARCHAR(30),   -- FraudType enum value
+    fraud_original_charge   DECIMAL(12,2), -- Original charge before inflation
+    fraud_inflation_amount  DECIMAL(12,2), -- Amount of inflation added
+    fraud_inflation_ratio   DECIMAL(6,3),  -- Inflation ratio (inflated/original)
+    fraud_source_claim_id   UUID,          -- Source claim for duplicates
+    fraud_ring_id           UUID           -- Shared ID for phantom billing rings
 );
 
 CREATE INDEX IF NOT EXISTS idx_claim_number ON claim(claim_number);
@@ -46,6 +55,8 @@ CREATE INDEX IF NOT EXISTS idx_claim_policy ON claim(policy_id);
 CREATE INDEX IF NOT EXISTS idx_claim_member ON claim(member_id);
 CREATE INDEX IF NOT EXISTS idx_claim_service_date ON claim(service_date);
 CREATE INDEX IF NOT EXISTS idx_claim_status ON claim(claim_status);
+CREATE INDEX IF NOT EXISTS idx_claim_is_fraud ON claim(is_fraud) WHERE is_fraud = TRUE;
+CREATE INDEX IF NOT EXISTS idx_claim_fraud_type ON claim(fraud_type) WHERE fraud_type IS NOT NULL;
 
 -- CLAIM_LINE: Individual claim service lines
 CREATE TABLE IF NOT EXISTS claim_line (

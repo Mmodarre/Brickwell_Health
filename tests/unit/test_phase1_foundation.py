@@ -175,10 +175,10 @@ class TestSurveyEnums:
     """Test Survey domain enums."""
 
     def test_survey_type_values(self):
-        """Test SurveyType enum values."""
-        assert SurveyType.POST_CLAIM.value == "PostClaim"
-        assert SurveyType.POST_INTERACTION.value == "PostInteraction"
-        assert SurveyType.ANNUAL.value == "Annual"
+        """Test SurveyType enum values match reference table type_code."""
+        assert SurveyType.POST_CLAIM.value == "POST_CLAIM"
+        assert SurveyType.POST_INTERACTION.value == "POST_INTERACTION"
+        assert SurveyType.ANNUAL.value == "ANNUAL"
 
     def test_nps_category_values(self):
         """Test NPSCategory enum values."""

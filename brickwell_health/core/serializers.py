@@ -520,6 +520,7 @@ def deserialize_pending_campaign_responses(
         "predicted_response_date",
         "predicted_open_date",
         "predicted_click_date",
+        "predicted_convert_date",
         "sent_at",
         "opened_at",
         "clicked_at",

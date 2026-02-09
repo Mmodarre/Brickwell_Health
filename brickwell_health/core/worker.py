@@ -52,6 +52,7 @@ from brickwell_health.core.processes.digital import DigitalBehaviorProcess
 from brickwell_health.core.processes.survey import SurveyProcess
 from brickwell_health.core.processes.nba import NBAActionProcess
 from brickwell_health.db.connection import create_engine_for_worker
+from brickwell_health.db.protocol import BatchWriterProtocol
 from brickwell_health.db.writer import BatchWriter
 from brickwell_health.domain.nba import (
     NBAActionWithRecommendation,
@@ -110,14 +111,18 @@ class SimulationWorker:
         # Partition manager
         self.partition = PartitionManager(worker_id, num_workers)
 
-        # Reference data loader
-        self.reference = ReferenceDataLoader(config.reference_data_path)
-
-        # Database engine
+        # Database engine (needed by reference loader)
         self.engine = create_engine_for_worker(config.database, worker_id)
 
-        # Batch writer
-        self.batch_writer = BatchWriter(self.engine, config.database.batch_size)
+        # Reference data loader (reads from database, falls back to JSON)
+        self.reference = ReferenceDataLoader(
+            engine=self.engine,
+            json_fallback_path=config.reference_data_path
+        )
+
+        # Batch writer (optionally wrapped with streaming)
+        base_writer = BatchWriter(self.engine, config.database.batch_size)
+        self.batch_writer: BatchWriterProtocol = self._maybe_wrap_with_streaming(base_writer)
 
         # ID generator (worker_id ensures unique sequential numbers across workers)
         self.id_generator = IDGenerator(
@@ -158,13 +163,70 @@ class SimulationWorker:
         self._start_time: float = 0
         self._stats: dict[str, Any] = {}
 
+    def _maybe_wrap_with_streaming(self, base_writer: BatchWriter) -> BatchWriterProtocol:
+        """
+        Conditionally wrap BatchWriter with StreamingBatchWriter.
+
+        Returns base_writer unchanged if streaming is disabled.
+        """
+        if not self.config.streaming.enabled:
+            return base_writer
+
+        from brickwell_health.streaming.factory import create_publisher
+        from brickwell_health.streaming.topic_resolver import TopicResolver
+        from brickwell_health.streaming.wrapper import StreamingBatchWriter
+
+        publisher = create_publisher(self.config.streaming, self.worker_id)
+        topic_resolver = TopicResolver(self.config.streaming)
+
+        def get_sim_datetime() -> date:
+            if self.sim_env:
+                return self.sim_env.current_date
+            return self.config.simulation.start_date
+
+        wrapper = StreamingBatchWriter(
+            inner=base_writer,
+            publisher=publisher,
+            topic_resolver=topic_resolver,
+            tables=set(self.config.streaming.tables),
+            worker_id=self.worker_id,
+            fail_open=self.config.streaming.fail_open,
+            get_sim_datetime=get_sim_datetime,
+            flush_interval=self.config.streaming.flush_interval_seconds,
+            batch_size=self.config.streaming.batch_size,
+        )
+
+        logger.info(
+            "streaming_enabled",
+            worker_id=self.worker_id,
+            backend=self.config.streaming.backend,
+            tables=self.config.streaming.tables,
+        )
+
+        return wrapper
+
+    def _close_streaming(self) -> None:
+        """Close streaming wrapper if active."""
+        from brickwell_health.streaming.wrapper import StreamingBatchWriter
+
+        if isinstance(self.batch_writer, StreamingBatchWriter):
+            self.batch_writer.close()
+
+    def _get_streaming_stats(self) -> dict[str, int]:
+        """Get streaming statistics if streaming is active."""
+        from brickwell_health.streaming.wrapper import StreamingBatchWriter
+
+        if isinstance(self.batch_writer, StreamingBatchWriter):
+            return self.batch_writer.get_streaming_stats()
+        return {}
+
     def run(self) -> dict[str, Any]:
         """
         Run the simulation.
 
         Returns:
             Dictionary of statistics from the run
-            
+
         Raises:
             CheckpointNotFoundError: If resume_mode is True but no checkpoint exists
             CheckpointCorruptedError: If checkpoint file is corrupted
@@ -233,6 +295,9 @@ class SimulationWorker:
 
         # Flush remaining data
         self.batch_writer.flush_all()
+
+        # Close streaming wrapper (drains background thread)
+        self._close_streaming()
 
         # Save final checkpoint for potential resume
         self._save_final_checkpoint()
@@ -325,6 +390,9 @@ class SimulationWorker:
 
         # Flush remaining data
         self.batch_writer.flush_all()
+
+        # Close streaming wrapper (drains background thread)
+        self._close_streaming()
 
         # Save final checkpoint for potential future resume
         self._save_final_checkpoint()
@@ -551,6 +619,7 @@ class SimulationWorker:
             "nba_stats": self.nba_process.get_stats() if self.nba_process else {},
             "shared_state": self.shared_state.get_stats() if self.shared_state else {},
             "resume_mode": self.resume_mode,
+            "streaming_stats": self._get_streaming_stats(),
         }
 
         logger.info(
@@ -629,6 +698,9 @@ class SimulationWorker:
         """Initialize all simulation processes with shared state."""
         # Create shared state for cross-process communication
         self.shared_state = SharedState()
+
+        # Initialize fraud-prone providers if fraud is enabled
+        self._init_fraud_providers()
 
         common_args = {
             "sim_env": self.sim_env,
@@ -727,6 +799,34 @@ class SimulationWorker:
                 **common_args,
                 shared_state=self.shared_state,
             )
+
+    def _init_fraud_providers(self) -> None:
+        """
+        Flag a subset of providers as fraud-prone.
+
+        Called once during worker initialization. Uses the worker's RNG
+        for deterministic selection.
+        """
+        fraud_config = getattr(self.config, "fraud", None)
+        if not fraud_config or not fraud_config.enabled:
+            return
+
+        providers = self.reference.get_providers(active_only=True)
+        if not providers:
+            return
+
+        fraud_rate = fraud_config.fraud_prone_provider_rate
+        for provider in providers:
+            provider_id = provider.get("provider_id")
+            if provider_id and self.rng.random() < fraud_rate:
+                self.shared_state.fraud_prone_providers[provider_id] = True
+
+        logger.info(
+            "fraud_providers_initialized",
+            worker_id=self.worker_id,
+            total_providers=len(providers),
+            fraud_prone=len(self.shared_state.fraud_prone_providers),
+        )
 
     def _load_nba_recommendations(self, as_of_date: date | None = None) -> None:
         """

@@ -13,7 +13,10 @@ import structlog
 
 from brickwell_health.core.processes.base import BaseProcess
 from brickwell_health.domain.coverage import BenefitUsageCreate
-from brickwell_health.domain.enums import CoverageType, ClaimType, ClaimStatus, DenialReason
+from brickwell_health.domain.claims import ClaimAssessmentCreate, ClaimCreate, ClaimLineCreate
+from brickwell_health.domain.enums import (
+    CoverageType, ClaimType, ClaimStatus, ClaimChannel, DenialReason, FraudType,
+)
 from brickwell_health.generators.claims_generator import ClaimsGenerator
 from brickwell_health.statistics.claim_propensity import ClaimPropensityModel
 from brickwell_health.utils.time_conversion import get_age, get_financial_year
@@ -76,6 +79,19 @@ class ClaimsProcess(BaseProcess):
         )
         self.propensity = ClaimPropensityModel(self.rng, self.reference, self.config.claims)
 
+        # Initialize fraud generator if fraud is enabled
+        self.fraud_gen = None
+        fraud_config = getattr(self.config, "fraud", None)
+        if fraud_config and fraud_config.enabled:
+            from brickwell_health.generators.fraud_generator import FraudGenerator
+            self.fraud_gen = FraudGenerator(
+                rng=self.rng,
+                reference=self.reference,
+                id_generator=self.id_generator,
+                sim_env=self.sim_env,
+                fraud_config=fraud_config,
+            )
+
         # Build benefit limit lookup: (product_id, benefit_category_id) -> limit info
         self.benefit_limits = self.reference.build_benefit_limit_lookup()
 
@@ -83,21 +99,61 @@ class ClaimsProcess(BaseProcess):
         # Financial year is a string like "2024-2025"
         self.cumulative_usage: dict[tuple[UUID, int, str], Decimal] = {}
 
-        # Benefit category ID mapping for extras services
-        self._benefit_category_map = {
-            "Dental": 3,        # DENTAL
-            "Optical": 7,       # OPTICAL
-            "Physiotherapy": 8, # PHYSIO
-            "Chiropractic": 9,  # CHIRO
-            "Podiatry": 10,     # PODIATRY
-            "Psychology": 11,   # PSYCHOLOGY
-            "Massage": 13,      # MASSAGE (Remedial Massage)
-            "Acupuncture": 14,  # ACUPUNCTURE
-        }
+        # Build benefit category ID mapping from database reference table
+        self._benefit_category_map = self._build_benefit_category_map()
 
         # Clinical category to waiting period type mapping
         # Used to check if a hospital claim is blocked by specialized waiting periods
         self._clinical_category_wp_map = self.reference.get_clinical_category_wp_mapping()
+
+    def _build_benefit_category_map(self) -> dict[str, int]:
+        """
+        Build benefit category ID mapping from database reference table.
+
+        Maps service type names (e.g., "Dental", "Optical") to benefit_category_id values.
+
+        Returns:
+            Dict mapping service type name to benefit_category_id
+        """
+        benefit_categories = self.reference.get_benefit_categories()
+
+        # Build mapping from category_name to benefit_category_id
+        # Also map from common service type names to their corresponding categories
+        category_map = {}
+
+        for cat in benefit_categories:
+            cat_id = cat.get("benefit_category_id")
+            cat_name = cat.get("category_name", "")
+            cat_code = cat.get("category_code", "")
+
+            # Map by category_name (e.g., "Dental" -> 3)
+            if cat_name:
+                category_map[cat_name] = cat_id
+
+            # Map by common service type variations
+            # Match category_code to service type names
+            code_to_service = {
+                "DENTAL": "Dental",
+                "OPTICAL": "Optical",
+                "PHYSIO": "Physiotherapy",
+                "CHIRO": "Chiropractic",
+                "PODIATRY": "Podiatry",
+                "PSYCHOLOGY": "Psychology",
+                "MASSAGE": "Massage",
+                "ACUPUNCTURE": "Acupuncture",
+                "NATURAL_THERAPIES": "Natural Therapies",
+                "OSTEOPATHY": "Osteopathy",
+                "SPEECH_PATHOLOGY": "Speech Pathology",
+                "DIETETICS": "Dietetics",
+                "OCC_THERAPY": "Occupational Therapy",
+            }
+
+            if cat_code in code_to_service:
+                service_name = code_to_service[cat_code]
+                if service_name not in category_map:
+                    category_map[service_name] = cat_id
+
+        return category_map
 
     def _should_approve_claim(self, claim_type: ClaimType) -> tuple[bool, DenialReason | None]:
         """
@@ -347,6 +403,47 @@ class ClaimsProcess(BaseProcess):
             service_type=service_type,  # Pass pre-sampled service type
         )
 
+        # Step 4a: Fraud injection (before benefit capping)
+        fraud_type_applied = None
+        if self.fraud_gen and self.shared_state:
+            if self.fraud_gen.should_apply_fraud(claim.member_id, self.shared_state):
+                fraud_type_applied = self.fraud_gen.select_fraud_type(ClaimType.EXTRAS)
+
+                if fraud_type_applied == FraudType.UNBUNDLING:
+                    n_frags = self._write_unbundled_claims(
+                        claim, claim_line, member_data, service_date,
+                        approved, denial_reason,
+                        extras_claim=extras_claim,
+                    )
+                    self.increment_stat("extras_claims")
+                    self.increment_stat("fraud_claims", n_frags)
+                    return
+
+                if fraud_type_applied not in (
+                    FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+                ):
+                    # Inline fraud: modify claim in place
+                    fraud_fields = self._get_inline_fraud_fields(
+                        claim, fraud_type_applied, member_data,
+                    )
+                    for key, value in fraud_fields.items():
+                        object.__setattr__(claim, key, value)
+                    # Keep charge/benefit consistent across related records
+                    if "total_charge" in fraud_fields:
+                        object.__setattr__(
+                            claim_line, "charge_amount", fraud_fields["total_charge"],
+                        )
+                        object.__setattr__(
+                            extras_claim, "charge_amount", fraud_fields["total_charge"],
+                        )
+                    if fraud_fields.get("total_benefit") is not None:
+                        object.__setattr__(
+                            claim_line, "benefit_amount", fraud_fields["total_benefit"],
+                        )
+                        object.__setattr__(
+                            extras_claim, "benefit_amount", fraud_fields["total_benefit"],
+                        )
+
         # Step 5: Calculate benefit capping (for audit trail - applied during ASSESSED)
         # Re-fetch remaining limit using actual claim line category (may differ)
         remaining_limit = self._get_remaining_limit(
@@ -392,6 +489,23 @@ class ClaimsProcess(BaseProcess):
 
         self.increment_stat("extras_claims")
 
+        # Fraud: generate duplicate claim or track inline fraud stats
+        if fraud_type_applied:
+            if fraud_type_applied in (
+                FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+            ):
+                self._generate_duplicate_claim(
+                    claim, member_data, fraud_type_applied, service_date,
+                )
+            self.increment_stat("fraud_claims")
+
+        # Add legitimate claims to duplication pool for future duplicate sources
+        if self.fraud_gen and self.shared_state:
+            if not fraud_type_applied or fraud_type_applied in (
+                FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+            ):
+                self._add_to_duplication_pool(claim, member_data)
+
     def _generate_hospital_claim(
         self,
         member_data: dict,
@@ -432,6 +546,38 @@ class ClaimsProcess(BaseProcess):
             clinical_category_id=clinical_category_id,
         )
 
+        # Fraud injection (before writing)
+        fraud_type_applied = None
+        if self.fraud_gen and self.shared_state:
+            if self.fraud_gen.should_apply_fraud(claim.member_id, self.shared_state):
+                fraud_type_applied = self.fraud_gen.select_fraud_type(ClaimType.HOSPITAL)
+
+                if fraud_type_applied == FraudType.UNBUNDLING:
+                    first_line = claim_lines[0] if claim_lines else None
+                    hospital_records = (
+                        [("hospital_admission", admission.model_dump_db())]
+                        + [("prosthesis_claim", p.model_dump()) for p in prosthesis_claims]
+                        + [("medical_service", m.model_dump()) for m in medical_services]
+                    )
+                    n_frags = self._write_unbundled_claims(
+                        claim, first_line, member_data, admission_date,
+                        approved, denial_reason,
+                        hospital_records=hospital_records,
+                    )
+                    self.increment_stat("hospital_claims")
+                    self.increment_stat("fraud_claims", n_frags)
+                    return
+
+                if fraud_type_applied not in (
+                    FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+                ):
+                    # Inline fraud: modify claim header
+                    fraud_fields = self._get_inline_fraud_fields(
+                        claim, fraud_type_applied, member_data,
+                    )
+                    for key, value in fraud_fields.items():
+                        object.__setattr__(claim, key, value)
+
         # Write claim as SUBMITTED
         self.batch_writer.add("claim", claim.model_dump_db())
         for cl in claim_lines:
@@ -467,6 +613,23 @@ class ClaimsProcess(BaseProcess):
         if medical_services:
             self.increment_stat("medical_services", len(medical_services))
 
+        # Fraud: generate duplicate or track inline fraud stats
+        if fraud_type_applied:
+            if fraud_type_applied in (
+                FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+            ):
+                self._generate_duplicate_claim(
+                    claim, member_data, fraud_type_applied, admission_date,
+                )
+            self.increment_stat("fraud_claims")
+
+        # Add legitimate claims to duplication pool
+        if self.fraud_gen and self.shared_state:
+            if not fraud_type_applied or fraud_type_applied in (
+                FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+            ):
+                self._add_to_duplication_pool(claim, member_data)
+
     def _generate_ambulance_claim(
         self,
         member_data: dict,
@@ -492,6 +655,22 @@ class ClaimsProcess(BaseProcess):
             incident_date=incident_date,
         )
 
+        # Fraud injection (before writing)
+        fraud_type_applied = None
+        if self.fraud_gen and self.shared_state:
+            if self.fraud_gen.should_apply_fraud(claim.member_id, self.shared_state):
+                fraud_type_applied = self.fraud_gen.select_fraud_type(ClaimType.AMBULANCE)
+
+                if fraud_type_applied not in (
+                    FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+                ):
+                    # Inline fraud: modify claim header
+                    fraud_fields = self._get_inline_fraud_fields(
+                        claim, fraud_type_applied, member_data,
+                    )
+                    for key, value in fraud_fields.items():
+                        object.__setattr__(claim, key, value)
+
         # Write claim as SUBMITTED
         self.batch_writer.add("claim", claim.model_dump_db())
         self.batch_writer.add("ambulance_claim", ambulance.model_dump())
@@ -510,6 +689,23 @@ class ClaimsProcess(BaseProcess):
         )
 
         self.increment_stat("ambulance_claims")
+
+        # Fraud: generate duplicate or track inline fraud stats
+        if fraud_type_applied:
+            if fraud_type_applied in (
+                FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+            ):
+                self._generate_duplicate_claim(
+                    claim, member_data, fraud_type_applied, incident_date,
+                )
+            self.increment_stat("fraud_claims")
+
+        # Add legitimate claims to duplication pool
+        if self.fraud_gen and self.shared_state:
+            if not fraud_type_applied or fraud_type_applied in (
+                FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
+            ):
+                self._add_to_duplication_pool(claim, member_data)
 
     def _generate_rejected_claim(
         self,
@@ -611,9 +807,9 @@ class ClaimsProcess(BaseProcess):
         delays = self.config.claims.processing_delays
         auto_adj = delays.auto_adjudication
 
-        # Determine if claim is auto-adjudicated based on claim type
+        # Determine if claim is auto-adjudicated based on claim type and amount
         claim_type = claim.claim_type
-        is_auto_adjudicated = self._is_auto_adjudicated(claim_type, auto_adj)
+        is_auto_adjudicated = self._is_auto_adjudicated(claim_type, claim.total_charge, auto_adj)
 
         # Sample assessment delay from appropriate distribution
         assessment_delay = self._sample_assessment_delay(is_auto_adjudicated, auto_adj)
@@ -643,12 +839,17 @@ class ClaimsProcess(BaseProcess):
             "member_data": member_data,
             "policy_id": claim.policy_id,  # Store for benefit usage recording
             "is_auto_adjudicated": is_auto_adjudicated,  # Track for analytics
+            "claim_type": claim.claim_type,  # Needed for assessment record assessor
+            "total_charge": claim.total_charge,  # For assessment audit trail
             # Benefit capping info for audit trail (applied during ASSESSED)
             "capped_benefit": capped_benefit,
             "additional_gap": additional_gap,
             "original_benefit": original_benefit,
             "original_gap": original_gap,
             "extras_claim_id": extras_claim_id,
+            # Claim-level totals for churn model write-back
+            "claim_total_benefit": claim.total_benefit,
+            "claim_total_gap": claim.total_gap,
         }
 
         # Emit CRM event for claim submission
@@ -662,32 +863,47 @@ class ClaimsProcess(BaseProcess):
             },
         )
 
-    def _is_auto_adjudicated(self, claim_type: str, auto_adj) -> bool:
+    def _is_auto_adjudicated(self, claim_type: str, total_charge: Decimal, auto_adj) -> bool:
         """
-        Determine if a claim is auto-adjudicated based on claim type.
+        Determine if a claim is auto-adjudicated based on claim type and amount.
 
-        Industry benchmarks (2024-2025):
-        - Extras/Dental: 85-90% auto-adjudicated
-        - Hospital: 60-70% auto-adjudicated
-        - Ambulance: 90-95% auto-adjudicated
+        Uses a logistic modifier so higher-value claims are progressively more
+        likely to be routed to manual review, reflecting real-world clinical
+        review thresholds.
 
         Args:
             claim_type: Type of claim (Hospital, Extras, Ambulance)
+            total_charge: Total claim charge amount
             auto_adj: AutoAdjudicationConfig
 
         Returns:
             True if claim should be auto-adjudicated
         """
-        if claim_type == "Extras":
-            auto_rate = auto_adj.extras_auto_rate
-        elif claim_type == "Hospital":
-            auto_rate = auto_adj.hospital_auto_rate
-        elif claim_type == "Ambulance":
-            auto_rate = auto_adj.ambulance_auto_rate
-        else:
-            auto_rate = 0.80  # Default fallback
+        import math
 
-        return self.rng.random() < auto_rate
+        if claim_type == "Extras":
+            base_rate = auto_adj.extras_auto_rate
+            threshold = auto_adj.extras_manual_threshold
+        elif claim_type == "Hospital":
+            base_rate = auto_adj.hospital_auto_rate
+            threshold = auto_adj.hospital_manual_threshold
+        elif claim_type == "Ambulance":
+            base_rate = auto_adj.ambulance_auto_rate
+            threshold = auto_adj.ambulance_manual_threshold
+        else:
+            base_rate = 0.80
+            threshold = 10_000
+
+        # Apply logistic penalty based on claim amount
+        amount = float(total_charge) if total_charge else 0.0
+        if amount > 0 and threshold > 0:
+            z = auto_adj.amount_steepness * (math.log(amount) - math.log(threshold))
+            penalty = auto_adj.amount_penalty_weight / (1 + math.exp(-z))
+            effective_rate = base_rate * (1 - penalty)
+        else:
+            effective_rate = base_rate
+
+        return self.rng.random() < effective_rate
 
     def _sample_assessment_delay(self, is_auto_adjudicated: bool, auto_adj) -> int:
         """
@@ -744,6 +960,10 @@ class ClaimsProcess(BaseProcess):
                 if data.get("capped_benefit") is not None and data.get("additional_gap"):
                     self._apply_benefit_capping(claim_id, data)
 
+                # Create claim assessment audit record
+                assessment = self._create_claim_assessment(claim_id, data)
+                self.batch_writer.add("claim_assessment", assessment.model_dump())
+
                 self._update_claim_status(
                     claim_id,
                     ClaimStatus.ASSESSED,
@@ -782,6 +1002,11 @@ class ClaimsProcess(BaseProcess):
                             "charge_amount": float(data.get("benefit_amount", 0) or 0),
                             "denial_reason": data["denial_reason"].value if data["denial_reason"] else None,
                         },
+                    )
+
+                    # Update policy claims stats for churn model
+                    self._update_policy_claims_stats(
+                        data["policy_id"], data, "REJECTED", current_date
                     )
 
                     del self.pending_claims[claim_id]
@@ -827,6 +1052,11 @@ class ClaimsProcess(BaseProcess):
                         "member_id": member_id,
                         "charge_amount": float(data.get("benefit_amount", 0) or 0),
                     },
+                )
+
+                # Update policy claims stats for churn model
+                self._update_policy_claims_stats(
+                    data["policy_id"], data, "PAID", current_date
                 )
 
                 del self.pending_claims[claim_id]
@@ -923,6 +1153,87 @@ class ClaimsProcess(BaseProcess):
         updates.update(field_updates)
         self.batch_writer.update_record("claim", "claim_id", claim_id, updates)
 
+    def _create_claim_assessment(self, claim_id: UUID, data: dict) -> ClaimAssessmentCreate:
+        """
+        Create a claim assessment audit record from pending claim data.
+
+        Populates assessment type, assessor, outcome, validation checks,
+        and benefit adjustment details based on adjudication results.
+
+        Args:
+            claim_id: The claim UUID
+            data: Pending claim data dict
+
+        Returns:
+            ClaimAssessmentCreate ready for batch writing
+        """
+        is_auto = data.get("is_auto_adjudicated", False)
+        approved = data.get("approved", False)
+        denial_reason = data.get("denial_reason")
+        claim_type = data.get("claim_type", "Extras")
+
+        # Assessment type
+        assessment_type = "Auto" if is_auto else "Manual"
+
+        # Assessed by (based on adjudication type and claim type)
+        if is_auto:
+            assessed_by = "AUTO_RULES_ENGINE"
+        elif claim_type == "Hospital":
+            assessed_by = "CLINICAL_REVIEWER"
+        else:
+            assessed_by = "BENEFITS_ASSESSOR"
+
+        # Outcome
+        outcome = "Approved" if approved else "Rejected"
+
+        # Validation checks
+        # Claims that fail WP never reach SUBMITTED, so waiting_period_check is always True
+        waiting_period_check = True
+        eligibility_check = True
+        benefit_limit_check = True
+
+        if denial_reason:
+            if denial_reason in (DenialReason.NO_COVERAGE, DenialReason.POLICY_EXCLUSIONS):
+                eligibility_check = False
+            if denial_reason == DenialReason.LIMITS_EXHAUSTED:
+                benefit_limit_check = False
+
+        # Benefit adjustments (extras capping)
+        original_benefit = data.get("original_benefit") or data.get("claim_total_benefit")
+        capped_benefit = data.get("capped_benefit")
+        if capped_benefit is not None:
+            adjusted_benefit = capped_benefit
+            if capped_benefit < (original_benefit or Decimal("0")):
+                adjustment_reason = "Annual benefit limit reached"
+            else:
+                adjustment_reason = None
+        else:
+            adjusted_benefit = original_benefit
+            adjustment_reason = None
+
+        # Notes for rejections
+        notes = None
+        if not approved and denial_reason:
+            notes = f"Denied: {denial_reason.value}"
+
+        return ClaimAssessmentCreate(
+            assessment_id=self.id_generator.generate_uuid(),
+            claim_id=claim_id,
+            assessment_type=assessment_type,
+            assessment_date=self.sim_env.current_datetime,
+            assessed_by=assessed_by,
+            original_benefit=original_benefit,
+            adjusted_benefit=adjusted_benefit,
+            adjustment_reason=adjustment_reason,
+            waiting_period_check=waiting_period_check,
+            benefit_limit_check=benefit_limit_check,
+            eligibility_check=eligibility_check,
+            outcome=outcome,
+            notes=notes,
+            created_at=self.sim_env.current_datetime,
+            created_by="SIMULATION",
+        )
+
     def _update_claim_line_status(self, claim_line_id: UUID, new_status: str) -> None:
         """
         Update claim line status in database.
@@ -954,7 +1265,7 @@ class ClaimsProcess(BaseProcess):
         """
         if denial_reason is None:
             return None
-        return self.claims_gen.DENIAL_REASON_IDS.get(denial_reason, 1)
+        return self.claims_gen.denial_reason_ids.get(denial_reason, 1)
 
     def _emit_crm_event(
         self,
@@ -981,6 +1292,56 @@ class ClaimsProcess(BaseProcess):
             "charge_amount": data.get("charge_amount", 0),
             "timestamp": self.sim_env.current_datetime,
         })
+
+    def _update_policy_claims_stats(
+        self,
+        policy_id: UUID,
+        data: dict,
+        outcome: str,
+        current_date: date,
+    ) -> None:
+        """
+        Append claim outcome to policy's rolling event logs in SharedState.
+
+        Read by PolicyLifecycleProcess._get_claims_history() to feed
+        the ChurnPredictionModel with a 12-month rolling window.
+
+        Args:
+            policy_id: The policy UUID
+            data: Pending claim data dict
+            outcome: "PAID" or "REJECTED"
+            current_date: Current simulation date
+        """
+        if not self.shared_state:
+            return
+        policy_dict = self.shared_state.active_policies.get(policy_id)
+        if policy_dict is None:
+            return
+
+        if outcome == "REJECTED":
+            denial_log = policy_dict.get("denial_log", [])
+            denial_log.append(current_date)
+            policy_dict["denial_log"] = denial_log
+
+        elif outcome == "PAID":
+            policy_dict["last_claim_date"] = current_date
+
+            benefit = float(
+                data.get("benefit_amount") or data.get("claim_total_benefit") or 0
+            )
+
+            # Extras claims have capping info; hospital/ambulance use claim_total_gap
+            if (
+                data.get("original_gap") is not None
+                and data.get("additional_gap") is not None
+            ):
+                gap = float(data["original_gap"]) + float(data["additional_gap"])
+            else:
+                gap = float(data.get("claim_total_gap") or 0)
+
+            paid_log = policy_dict.get("paid_claim_log", [])
+            paid_log.append((current_date, benefit, gap))
+            policy_dict["paid_claim_log"] = paid_log
 
     def _can_claim(
         self,
@@ -1203,6 +1564,302 @@ class ClaimsProcess(BaseProcess):
         self.policy_members.pop(pm_id, None)
         self.waiting_periods.pop(pm_id, None)
 
+    # =========================================================================
+    # Fraud Helper Methods
+    # =========================================================================
+
+    def _get_inline_fraud_fields(
+        self,
+        claim: ClaimCreate,
+        fraud_type: FraudType,
+        member_data: dict,
+    ) -> dict[str, Any]:
+        """
+        Dispatch to appropriate FraudGenerator method for inline fraud.
+
+        Returns dict of fields to set on the claim via object.__setattr__.
+        """
+        if fraud_type == FraudType.DRG_UPCODING:
+            return self.fraud_gen.apply_drg_upcoding(claim)
+        elif fraud_type == FraudType.EXTRAS_UPCODING:
+            return self.fraud_gen.apply_extras_upcoding(claim)
+        elif fraud_type == FraudType.PHANTOM_BILLING:
+            return self.fraud_gen.apply_phantom_billing(claim, self.shared_state)
+        elif fraud_type == FraudType.PROVIDER_OUTLIER:
+            return self.fraud_gen.apply_provider_outlier(claim)
+        elif fraud_type == FraudType.TEMPORAL_ANOMALY:
+            return self.fraud_gen.apply_temporal_anomaly(claim)
+        elif fraud_type == FraudType.GEOGRAPHIC_ANOMALY:
+            member = member_data.get("member")
+            member_state = member.state if member else "NSW"
+            return self.fraud_gen.apply_geographic_anomaly(claim, member_state)
+        return {}
+
+    def _generate_duplicate_claim(
+        self,
+        source_claim: ClaimCreate,
+        member_data: dict,
+        fraud_type: FraudType,
+        service_date: date,
+    ) -> None:
+        """Generate a duplicate fraud claim from a legitimate source claim."""
+        # Build claim snapshot for the fraud generator
+        claim_snapshot = {
+            "claim_id": source_claim.claim_id,
+            "policy_id": source_claim.policy_id,
+            "member_id": source_claim.member_id,
+            "coverage_id": source_claim.coverage_id,
+            "claim_type": (
+                source_claim.claim_type.value
+                if isinstance(source_claim.claim_type, ClaimType)
+                else source_claim.claim_type
+            ),
+            "service_date": source_claim.service_date,
+            "total_charge": source_claim.total_charge,
+            "provider_id": source_claim.provider_id,
+            "hospital_id": source_claim.hospital_id,
+            "claim_channel": (
+                source_claim.claim_channel.value
+                if isinstance(source_claim.claim_channel, ClaimChannel)
+                else source_claim.claim_channel
+            ),
+        }
+
+        if fraud_type == FraudType.EXACT_DUPLICATE:
+            dup_data = self.fraud_gen.generate_exact_duplicate(
+                claim_snapshot, service_date,
+            )
+        else:
+            dup_data = self.fraud_gen.generate_near_duplicate(
+                claim_snapshot, service_date,
+            )
+
+        self._write_duplicate_claim(dup_data, member_data)
+
+    def _write_duplicate_claim(
+        self,
+        dup_data: dict[str, Any],
+        member_data: dict,
+    ) -> None:
+        """Write a duplicate fraud claim to batch writer."""
+        claim_id = self.id_generator.generate_uuid()
+        claim_number = self.id_generator.generate_claim_number()
+
+        # Convert string values back to enums
+        claim_type = dup_data.get("claim_type")
+        if isinstance(claim_type, str):
+            claim_type = ClaimType(claim_type)
+
+        claim_channel = dup_data.get("claim_channel", "Online")
+        if isinstance(claim_channel, str):
+            claim_channel = ClaimChannel(claim_channel)
+
+        claim = ClaimCreate(
+            claim_id=claim_id,
+            claim_number=claim_number,
+            policy_id=dup_data["policy_id"],
+            member_id=dup_data["member_id"],
+            coverage_id=dup_data["coverage_id"],
+            claim_type=claim_type,
+            claim_status=ClaimStatus.SUBMITTED,
+            service_date=dup_data["service_date"],
+            lodgement_date=dup_data["lodgement_date"],
+            provider_id=dup_data.get("provider_id"),
+            hospital_id=dup_data.get("hospital_id"),
+            total_charge=dup_data["total_charge"],
+            claim_channel=claim_channel,
+            is_fraud=True,
+            fraud_type=dup_data["fraud_type"],
+            fraud_original_charge=dup_data.get("fraud_original_charge"),
+            fraud_inflation_amount=dup_data.get("fraud_inflation_amount"),
+            fraud_inflation_ratio=dup_data.get("fraud_inflation_ratio"),
+            fraud_source_claim_id=dup_data.get("fraud_source_claim_id"),
+            created_at=self.sim_env.current_datetime,
+        )
+
+        # Create minimal claim line for duplicate
+        claim_line_id = self.id_generator.generate_uuid()
+        claim_line = ClaimLineCreate(
+            claim_line_id=claim_line_id,
+            claim_id=claim_id,
+            line_number=1,
+            item_code="DUP",
+            service_date=dup_data["service_date"],
+            charge_amount=dup_data["total_charge"],
+            created_at=self.sim_env.current_datetime,
+        )
+
+        self.batch_writer.add("claim", claim.model_dump_db())
+        self.batch_writer.add("claim_line", claim_line.model_dump())
+
+        # Schedule lifecycle transitions (duplicates pass initial checks)
+        self._schedule_claim_transitions(
+            claim=claim,
+            claim_line_ids=[claim_line_id],
+            member_data=member_data,
+            lodgement_date=dup_data["lodgement_date"],
+            approved=True,
+            denial_reason=None,
+            benefit_category_id=None,
+            benefit_amount=None,
+        )
+
+    def _write_unbundled_claims(
+        self,
+        original_claim: ClaimCreate,
+        original_line: Any,
+        member_data: dict,
+        service_date: date,
+        approved: bool,
+        denial_reason: DenialReason | None,
+        extras_claim: Any = None,
+        hospital_records: list[tuple[str, Any]] | None = None,
+    ) -> int:
+        """
+        Write unbundled fraud claims (fragments) to batch writer.
+
+        Splits the original claim into multiple fragments with inflation.
+        First fragment reuses original claim_id (so detail records still link).
+        Additional fragments get new claim_ids with minimal records.
+
+        Returns number of fragments written.
+        """
+        fragments = self.fraud_gen.generate_unbundled_claims(
+            original_claim.total_charge,
+        )
+
+        original_benefit = original_claim.total_benefit or Decimal("0")
+        original_charge = original_claim.total_charge
+        benefit_ratio = (
+            original_benefit / original_charge
+            if original_charge > 0 else Decimal("0")
+        )
+
+        for i, fragment in enumerate(fragments):
+            frag_charge = fragment["charge_amount"]
+            frag_benefit = (frag_charge * benefit_ratio).quantize(Decimal("0.01"))
+            frag_gap = frag_charge - frag_benefit
+
+            fraud_update = {
+                "total_charge": frag_charge,
+                "total_benefit": frag_benefit,
+                "total_gap": frag_gap,
+                "is_fraud": True,
+                "fraud_type": FraudType.UNBUNDLING,
+                "fraud_original_charge": fragment["fraud_original_charge"],
+                "fraud_inflation_amount": fragment["fraud_inflation_amount"],
+                "fraud_inflation_ratio": fragment["fraud_inflation_ratio"],
+            }
+
+            if i == 0:
+                # First fragment: reuse original claim_id
+                frag_claim = original_claim.model_copy(update=fraud_update)
+                frag_claim_id = original_claim.claim_id
+
+                if original_line:
+                    frag_line = original_line.model_copy(update={
+                        "charge_amount": frag_charge,
+                        "benefit_amount": frag_benefit,
+                        "gap_amount": frag_gap,
+                    })
+                    frag_line_id = frag_line.claim_line_id
+                else:
+                    frag_line_id = self.id_generator.generate_uuid()
+                    frag_line = ClaimLineCreate(
+                        claim_line_id=frag_line_id,
+                        claim_id=frag_claim_id,
+                        line_number=1,
+                        item_code="UNBUNDLE",
+                        service_date=service_date,
+                        charge_amount=frag_charge,
+                        benefit_amount=frag_benefit,
+                        gap_amount=frag_gap,
+                        created_at=self.sim_env.current_datetime,
+                    )
+            else:
+                # Additional fragments: new claim_ids
+                frag_claim_id = self.id_generator.generate_uuid()
+                fraud_update["claim_id"] = frag_claim_id
+                fraud_update["claim_number"] = (
+                    self.id_generator.generate_claim_number()
+                )
+                fraud_update["created_at"] = self.sim_env.current_datetime
+                frag_claim = original_claim.model_copy(update=fraud_update)
+
+                frag_line_id = self.id_generator.generate_uuid()
+                frag_line = ClaimLineCreate(
+                    claim_line_id=frag_line_id,
+                    claim_id=frag_claim_id,
+                    line_number=1,
+                    item_code="UNBUNDLE",
+                    service_date=service_date,
+                    charge_amount=frag_charge,
+                    benefit_amount=frag_benefit,
+                    gap_amount=frag_gap,
+                    created_at=self.sim_env.current_datetime,
+                )
+
+            # Write claim and line
+            self.batch_writer.add("claim", frag_claim.model_dump_db())
+            self.batch_writer.add("claim_line", frag_line.model_dump())
+
+            # Write detail records for first fragment only
+            if i == 0:
+                if extras_claim:
+                    updated_extras = extras_claim.model_copy(update={
+                        "charge_amount": frag_charge,
+                        "benefit_amount": frag_benefit,
+                    })
+                    self.batch_writer.add(
+                        "extras_claim", updated_extras.model_dump_db(),
+                    )
+                if hospital_records:
+                    for table_name, record_data in hospital_records:
+                        self.batch_writer.add(table_name, record_data)
+
+            # Schedule lifecycle transitions for each fragment
+            self._schedule_claim_transitions(
+                claim=frag_claim,
+                claim_line_ids=[frag_line_id],
+                member_data=member_data,
+                lodgement_date=service_date,
+                approved=approved,
+                denial_reason=denial_reason if not approved else None,
+                benefit_category_id=None,
+                benefit_amount=frag_benefit,
+            )
+
+        return len(fragments)
+
+    def _add_to_duplication_pool(
+        self,
+        claim: ClaimCreate,
+        member_data: dict,
+    ) -> None:
+        """Add a legitimate claim to the SharedState duplication pool."""
+        if not self.shared_state:
+            return
+        self.shared_state.add_claim_for_duplication({
+            "claim_id": claim.claim_id,
+            "policy_id": claim.policy_id,
+            "member_id": claim.member_id,
+            "coverage_id": claim.coverage_id,
+            "claim_type": (
+                claim.claim_type.value
+                if isinstance(claim.claim_type, ClaimType)
+                else claim.claim_type
+            ),
+            "service_date": claim.service_date,
+            "total_charge": claim.total_charge,
+            "provider_id": claim.provider_id,
+            "hospital_id": claim.hospital_id,
+            "claim_channel": (
+                claim.claim_channel.value
+                if isinstance(claim.claim_channel, ClaimChannel)
+                else claim.claim_channel
+            ),
+        })
+
     def _log_progress(self) -> None:
         """Log claims progress."""
         stats = self.get_stats()
@@ -1216,4 +1873,5 @@ class ClaimsProcess(BaseProcess):
             ambulance_claims=stats.get("ambulance_claims", 0),
             prosthesis_claims=stats.get("prosthesis_claims", 0),
             rejected_claims=stats.get("rejected_claims", 0),
+            fraud_claims=stats.get("fraud_claims", 0),
         )

@@ -91,6 +91,19 @@ class ClaimStatus(str, Enum):
     QUERIED = "Queried"
 
 
+class FraudType(str, Enum):
+    """Type of fraudulent claim."""
+    DRG_UPCODING = "DRGUpcoding"
+    EXTRAS_UPCODING = "ExtrasUpcoding"
+    EXACT_DUPLICATE = "ExactDuplicate"
+    NEAR_DUPLICATE = "NearDuplicate"
+    UNBUNDLING = "Unbundling"
+    PHANTOM_BILLING = "PhantomBilling"
+    PROVIDER_OUTLIER = "ProviderOutlier"
+    TEMPORAL_ANOMALY = "TemporalAnomaly"
+    GEOGRAPHIC_ANOMALY = "GeographicAnomaly"
+
+
 class DenialReason(str, Enum):
     """
     Claim denial reason codes.
@@ -443,12 +456,12 @@ class PageCategory(str, Enum):
 # ============================================================================
 
 class SurveyType(str, Enum):
-    """Type of survey sent."""
-    POST_CLAIM = "PostClaim"
-    POST_INTERACTION = "PostInteraction"
-    POST_COMPLAINT_RESOLUTION = "PostComplaintResolution"
-    ANNUAL = "Annual"
-    RELATIONSHIP = "Relationship"
+    """Type of survey sent. Values match survey_type reference table type_code."""
+    POST_CLAIM = "POST_CLAIM"
+    POST_INTERACTION = "POST_INTERACTION"
+    POST_COMPLAINT_RESOLUTION = "POST_COMPLAINT"  # Maps to POST_COMPLAINT in reference
+    ANNUAL = "ANNUAL"
+    RELATIONSHIP = "SIX_MONTH"  # Maps to SIX_MONTH in reference
 
 
 class NPSCategory(str, Enum):

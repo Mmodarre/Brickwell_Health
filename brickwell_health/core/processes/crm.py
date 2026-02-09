@@ -121,6 +121,9 @@ class CRMProcess(BaseProcess):
         )
         self.trigger_engine = EventTriggerEngine(self.rng, trigger_config)
 
+        # Load baseline interaction types from database (inquiry types only)
+        self._baseline_interaction_types = self._load_baseline_interaction_types()
+
         # Track pending cases and complaints for lifecycle processing (INSERT-then-UPDATE)
         self.pending_cases: dict[UUID, dict[str, Any]] = {}
         self.pending_complaints: dict[UUID, dict[str, Any]] = {}
@@ -193,6 +196,42 @@ class CRMProcess(BaseProcess):
             # Log progress monthly
             if int(self.sim_env.now) % 30 == 0:
                 self._log_progress()
+
+    def _load_baseline_interaction_types(self) -> list[str]:
+        """
+        Load baseline interaction type codes from database reference table.
+
+        Returns only 'Inquiry' category interaction types for baseline contacts.
+
+        Returns:
+            List of interaction type codes (e.g., ["GENERAL_INQUIRY", "COVER_INQUIRY", ...])
+        """
+        interaction_types = self.reference.get_interaction_types()
+
+        # Filter to inquiry types and extract type_code
+        # The reference_db_loader already filters to "Inquiry" category,
+        # but we verify here for safety
+        baseline_types = [
+            t.get("type_code")
+            for t in interaction_types
+            if t.get("category") == "Inquiry" and t.get("type_code")
+        ]
+
+        # Fallback to defaults if no inquiry types found in database
+        if not baseline_types:
+            logger.warning(
+                "no_inquiry_interaction_types_found",
+                fallback="using hardcoded defaults"
+            )
+            baseline_types = [
+                "GENERAL_INQUIRY",
+                "COVER_INQUIRY",
+                "BENEFIT_INQUIRY",
+                "POLICY_INFO",
+                "MEMBERSHIP_CARD",
+            ]
+
+        return baseline_types
 
     def _process_event_queue(self, current_date: date) -> None:
         """Process CRM trigger events from Claims/Billing processes."""
@@ -871,15 +910,8 @@ class CRMProcess(BaseProcess):
                 member = member_data.get("member")
 
                 if policy and member:
-                    # Sample interaction type for baseline contact
-                    baseline_types = [
-                        "GENERAL_INQUIRY",
-                        "COVER_INQUIRY",
-                        "BENEFIT_INQUIRY",
-                        "POLICY_INFO",
-                        "MEMBERSHIP_CARD",
-                    ]
-                    interaction_type = self.rng.choice(baseline_types)
+                    # Sample interaction type for baseline contact from database reference
+                    interaction_type = self.rng.choice(self._baseline_interaction_types)
 
                     interaction = self.interaction_gen.generate(
                         policy_id=policy.policy_id,

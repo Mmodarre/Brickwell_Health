@@ -13,7 +13,7 @@ import structlog
 
 from brickwell_health.config.models import SimulationConfig
 from brickwell_health.core.environment import SimulationEnvironment
-from brickwell_health.db.writer import BatchWriter
+from brickwell_health.db.protocol import BatchWriterProtocol
 from brickwell_health.generators.id_generator import IDGenerator
 from brickwell_health.reference.loader import ReferenceDataLoader
 
@@ -66,7 +66,7 @@ class BaseProcess(ABC):
         self,
         sim_env: SimulationEnvironment,
         config: SimulationConfig,
-        batch_writer: BatchWriter,
+        batch_writer: BatchWriterProtocol,
         id_generator: IDGenerator,
         reference: ReferenceDataLoader,
         worker_id: int = 0,

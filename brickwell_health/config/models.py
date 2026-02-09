@@ -334,6 +334,39 @@ class AutoAdjudicationConfig(BaseModel):
         description="Maximum days for manual review claims",
     )
 
+    # Amount-based manual review routing (logistic modifier)
+    # P(auto) = base_rate * (1 - penalty_weight * sigmoid(steepness * ln(amount/threshold)))
+    # Below threshold: rate ~= base_rate (minimal penalty)
+    # At threshold: rate = base_rate * (1 - penalty_weight/2)
+    # Far above threshold: rate approaches base_rate * (1 - penalty_weight)
+    hospital_manual_threshold: float = Field(
+        default=10_000,
+        ge=0,
+        description="Hospital claim amount ($) above which manual review becomes more likely",
+    )
+    extras_manual_threshold: float = Field(
+        default=2_000,
+        ge=0,
+        description="Extras claim amount ($) above which manual review becomes more likely",
+    )
+    ambulance_manual_threshold: float = Field(
+        default=5_000,
+        ge=0,
+        description="Ambulance claim amount ($) above which manual review becomes more likely",
+    )
+    amount_steepness: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=5.0,
+        description="Logistic curve steepness for amount-based routing",
+    )
+    amount_penalty_weight: float = Field(
+        default=0.5,
+        ge=0,
+        le=1.0,
+        description="Maximum auto-rate reduction from amount penalty (0.5 = up to 50% reduction)",
+    )
+
 
 class ClaimProcessingDelaysConfig(BaseModel):
     """Processing delays for claim lifecycle transitions.
@@ -514,6 +547,14 @@ class ChurnModelConfig(BaseModel):
         description=(
             "Number of claim denials to trigger dissatisfaction flag. "
             "Members with denied claims are more likely to churn."
+        ),
+    )
+    high_oop_threshold: float = Field(
+        default=500.0,
+        ge=0,
+        description=(
+            "Cumulative 12-month out-of-pocket gap threshold ($) to "
+            "trigger dissatisfaction. Uses claim-level total_gap."
         ),
     )
 
@@ -985,6 +1026,227 @@ class NBAConfig(BaseModel):
     )
 
 
+# =============================================================================
+# FRAUD CONFIGURATION
+# =============================================================================
+
+
+class ZeroBusConfig(BaseModel):
+    """ZeroBus Ingest connection configuration for Databricks streaming."""
+
+    workspace_id: str = Field(default="", description="Databricks workspace ID")
+    workspace_url: str = Field(
+        default="",
+        description="Databricks workspace URL (e.g., https://xxx.cloud.databricks.com)",
+    )
+    region: str = Field(default="", description="Cloud region (e.g., us-east-1)")
+    token: str = Field(
+        default="",
+        description="Databricks PAT token (reuse llm.databricks.token). If set, skips OAuth2.",
+    )
+    client_id: str = Field(
+        default="", description="Service principal application ID (OAuth2 alternative to PAT)"
+    )
+    client_secret: str = Field(
+        default="", description="Service principal secret (OAuth2 alternative to PAT)"
+    )
+    catalog: str = Field(default="brickwell_health", description="Unity Catalog name")
+    schema_name: str = Field(default="ingest_schema_bwh", description="Schema name in Unity Catalog")
+
+
+class StreamingConfig(BaseModel):
+    """Configuration for event streaming alongside database writes."""
+
+    enabled: bool = Field(default=False, description="Enable event streaming")
+    backend: str = Field(
+        default="json_file",
+        description="Streaming backend: zerobus | json_file | log | noop",
+    )
+    tables: list[str] = Field(
+        default=[
+            "claim",
+            "claim_line",
+            "extras_claim",
+            "hospital_admission",
+            "prosthesis_claim",
+            "medical_service",
+            "ambulance_claim",
+            "claim_assessment",
+            "benefit_usage",
+        ],
+        description="Tables to stream (any table name from BatchWriter)",
+    )
+    topic_strategy: str = Field(
+        default="per_table",
+        description="Topic resolution: per_table | single | custom",
+    )
+    topic_prefix: str = Field(
+        default="",
+        description="Topic prefix for json_file/log backends",
+    )
+    topic_mapping: dict[str, str] = Field(
+        default_factory=dict,
+        description="Custom table-to-topic mapping (for 'custom' strategy)",
+    )
+    fail_open: bool = Field(
+        default=True,
+        description="If True, streaming errors log warnings but don't block simulation",
+    )
+    flush_interval_seconds: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=60.0,
+        description="Background thread drain interval in seconds",
+    )
+    batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=10000,
+        description="Maximum events per batch POST to backend",
+    )
+    json_file_output_dir: str = Field(
+        default="data/streaming",
+        description="Output directory for json_file backend (NDJSON files)",
+    )
+    log_level: str = Field(
+        default="debug",
+        description="Log level for log backend",
+    )
+    zerobus: ZeroBusConfig = Field(
+        default_factory=ZeroBusConfig,
+        description="ZeroBus Ingest connection settings",
+    )
+
+
+class FraudTypeConfig(BaseModel):
+    """Base configuration for a single fraud type."""
+
+    weight: float = Field(
+        default=0.0, ge=0, le=1.0,
+        description="Weight of this fraud type among all fraud claims",
+    )
+    enabled: bool = Field(default=True, description="Enable this fraud type")
+
+
+class DRGUpcodingConfig(FraudTypeConfig):
+    """DRG upcoding parameters (hospital claims only)."""
+
+    weight: float = 0.25
+    cc_shift_probability: float = Field(
+        default=0.40, ge=0, le=1.0,
+        description="Probability of CC shift (1.3x) vs MCC shift (1.7x)",
+    )
+    cc_multiplier: float = Field(default=1.3, ge=1.0, description="Charge multiplier for CC shift")
+    mcc_multiplier: float = Field(default=1.7, ge=1.0, description="Charge multiplier for MCC shift")
+
+
+class ExtrasUpcodingConfig(FraudTypeConfig):
+    """Extras upcoding parameters."""
+
+    weight: float = 0.15
+    inflation_mu: float = Field(default=0.4, description="Lognormal mu for inflation multiplier")
+    inflation_sigma: float = Field(default=0.5, ge=0.1, description="Lognormal sigma")
+    inflation_min: float = Field(default=1.2, ge=1.0, description="Minimum inflation multiplier")
+    inflation_max: float = Field(default=2.5, ge=1.0, description="Maximum inflation multiplier")
+
+
+class ExactDuplicateConfig(FraudTypeConfig):
+    """Exact duplicate claim parameters."""
+
+    weight: float = 0.06
+    delay_days_min: int = Field(default=7, ge=1, description="Min days after original claim")
+    delay_days_max: int = Field(default=30, ge=1, description="Max days after original claim")
+
+
+class NearDuplicateConfig(FraudTypeConfig):
+    """Near duplicate claim parameters."""
+
+    weight: float = 0.06
+    amount_variation_pct: float = Field(default=0.05, ge=0, le=0.2, description="Amount variation +/- pct")
+    date_shift_days: int = Field(default=7, ge=1, description="Max service date shift in days")
+    delay_days_min: int = Field(default=15, ge=1, description="Min days after original claim")
+    delay_days_max: int = Field(default=60, ge=1, description="Max days after original claim")
+
+
+class UnbundlingConfig(FraudTypeConfig):
+    """Service unbundling parameters."""
+
+    weight: float = 0.08
+    fragment_count_min: int = Field(default=2, ge=2, description="Minimum fragments")
+    fragment_count_max: int = Field(default=3, ge=2, description="Maximum fragments")
+    inflation_pct: float = Field(default=0.35, ge=0.1, le=1.0, description="Total inflation pct")
+
+
+class PhantomBillingConfig(FraudTypeConfig):
+    """Phantom billing parameters (service never rendered)."""
+
+    weight: float = 0.10
+    fraud_ring_probability: float = Field(
+        default=0.30, ge=0, le=1.0,
+        description="Probability that phantom claim is part of a fraud ring",
+    )
+    ring_size_min: int = Field(default=3, ge=2, description="Minimum members in fraud ring")
+    ring_size_max: int = Field(default=8, ge=2, description="Maximum members in fraud ring")
+
+
+class ProviderOutlierConfig(FraudTypeConfig):
+    """Provider outlier parameters."""
+
+    weight: float = 0.20
+    frequency_multiplier_min: float = Field(default=2.0, ge=1.5, description="Min frequency multiplier")
+    frequency_multiplier_max: float = Field(default=3.0, ge=1.5, description="Max frequency multiplier")
+    amount_shift_min: float = Field(default=0.3, ge=0, description="Min mu shift for claim amount")
+    amount_shift_max: float = Field(default=0.7, ge=0, description="Max mu shift for claim amount")
+
+
+class TemporalAnomalyConfig(FraudTypeConfig):
+    """Temporal anomaly parameters (weekend/holiday service dates)."""
+
+    weight: float = 0.05
+
+
+class GeographicAnomalyConfig(FraudTypeConfig):
+    """Geographic anomaly parameters (cross-state provider)."""
+
+    weight: float = 0.05
+
+
+class FraudConfig(BaseModel):
+    """Fraud claim generation configuration."""
+
+    enabled: bool = Field(default=False, description="Enable fraud claim generation")
+
+    fraud_rate: float = Field(
+        default=0.06, ge=0, le=0.3,
+        description="Fraction of all claims that are fraudulent (~6%)",
+    )
+
+    fraud_prone_member_rate: float = Field(
+        default=0.03, ge=0, le=0.2,
+        description="Fraction of members flagged as fraud-prone at acquisition",
+    )
+    fraud_prone_claim_multiplier: float = Field(
+        default=5.0, ge=1.0, le=20.0,
+        description="Multiplier on fraud probability for fraud-prone members",
+    )
+
+    fraud_prone_provider_rate: float = Field(
+        default=0.02, ge=0, le=0.1,
+        description="Fraction of providers marked as fraud-prone",
+    )
+
+    # Per-type configurations
+    drg_upcoding: DRGUpcodingConfig = Field(default_factory=DRGUpcodingConfig)
+    extras_upcoding: ExtrasUpcodingConfig = Field(default_factory=ExtrasUpcodingConfig)
+    exact_duplicate: ExactDuplicateConfig = Field(default_factory=ExactDuplicateConfig)
+    near_duplicate: NearDuplicateConfig = Field(default_factory=NearDuplicateConfig)
+    unbundling: UnbundlingConfig = Field(default_factory=UnbundlingConfig)
+    phantom_billing: PhantomBillingConfig = Field(default_factory=PhantomBillingConfig)
+    provider_outlier: ProviderOutlierConfig = Field(default_factory=ProviderOutlierConfig)
+    temporal_anomaly: TemporalAnomalyConfig = Field(default_factory=TemporalAnomalyConfig)
+    geographic_anomaly: GeographicAnomalyConfig = Field(default_factory=GeographicAnomalyConfig)
+
+
 class SimulationConfig(BaseSettings):
     """
     Root simulation configuration.
@@ -1014,6 +1276,12 @@ class SimulationConfig(BaseSettings):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     event_triggers: EventTriggersConfig = Field(default_factory=EventTriggersConfig)
     nba: NBAConfig = Field(default_factory=NBAConfig)
+
+    # Event streaming
+    streaming: StreamingConfig = Field(default_factory=StreamingConfig)
+
+    # Fraud claim generation
+    fraud: FraudConfig = Field(default_factory=FraudConfig)
 
     reference_data_path: Path = Field(
         default=Path("data/reference"),

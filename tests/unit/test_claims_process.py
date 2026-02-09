@@ -99,7 +99,7 @@ def mock_claims_process(test_rng, test_config, sim_env, shared_state, mock_batch
 
         # Mock the claims generator
         process.claims_gen = MagicMock()
-        process.claims_gen.DENIAL_REASON_IDS = {
+        process.claims_gen.denial_reason_ids = {
             DenialReason.NO_COVERAGE: 1,
             DenialReason.LIMITS_EXHAUSTED: 2,
             DenialReason.WAITING_PERIOD: 3,
@@ -108,6 +108,10 @@ def mock_claims_process(test_rng, test_config, sim_env, shared_state, mock_batch
             DenialReason.PROVIDER_ISSUES: 6,
             DenialReason.ADMINISTRATIVE: 7,
         }
+
+        # Mock the ID generator (needed for assessment record creation)
+        process.id_generator = MagicMock()
+        process.id_generator.generate_uuid.return_value = uuid4()
 
         return process
 
@@ -197,6 +201,9 @@ class TestClaimTransitions:
             "benefit_category_id": None,
             "benefit_amount": None,
             "member_data": {},
+            "claim_type": "Extras",
+            "total_charge": Decimal("200.00"),
+            "is_auto_adjudicated": True,
         }
 
         # Process transitions on assessment_date
@@ -205,11 +212,19 @@ class TestClaimTransitions:
         # Should have updated claim status
         assert mock_claims_process.pending_claims[claim_id]["status"] == "ASSESSED"
 
-        # Should have called update_record
+        # Should have called update_record for claim status
         assert len(mock_batch_writer.updates) == 1
         update = mock_batch_writer.updates[0]
         assert update["table_name"] == "claim"
         assert update["updates"]["claim_status"] == ClaimStatus.ASSESSED.value
+
+        # Should have created a claim_assessment record
+        assert "claim_assessment" in mock_batch_writer.records
+        assert len(mock_batch_writer.records["claim_assessment"]) == 1
+        assessment = mock_batch_writer.records["claim_assessment"][0]
+        assert assessment["claim_id"] == claim_id
+        assert assessment["assessment_type"] == "Auto"
+        assert assessment["outcome"] == "Approved"
 
     def test_assessed_to_approved_transition(
         self, mock_claims_process, mock_batch_writer
@@ -442,6 +457,9 @@ class TestCDCFlushBehavior:
             "benefit_category_id": None,
             "benefit_amount": None,
             "member_data": {},
+            "claim_type": "Extras",
+            "total_charge": Decimal("200.00"),
+            "is_auto_adjudicated": True,
         }
 
         mock_claims_process._process_claim_transitions(assessment_date)
@@ -519,6 +537,9 @@ class TestCDCFlushBehavior:
             "benefit_category_id": None,
             "benefit_amount": None,
             "member_data": {},
+            "claim_type": "Extras",
+            "total_charge": Decimal("200.00"),
+            "is_auto_adjudicated": True,
         }
 
         mock_claims_process._process_claim_transitions(assessment_date)

@@ -147,13 +147,7 @@ class CommunicationProcess(BaseProcess):
         self.campaigns_per_year = campaign_config_dict.get("campaigns_per_year", 6)
         self.type_distribution = campaign_config_dict.get(
             "type_distribution",
-            {
-                "Retention": 0.30,
-                "Engagement": 0.25,
-                "Upsell": 0.20,
-                "CrossSell": 0.15,
-                "Winback": 0.10,
-            },
+            self.reference.get_campaign_type_distribution(),
         )
         self.response_rates = campaign_config_dict.get("response_rates", {})
 
@@ -717,7 +711,13 @@ class CommunicationProcess(BaseProcess):
         if not trigger_type:
             return None
 
-        mapping = {
+        # Try reference lookup first (with normalized matching)
+        template = self.reference.get_communication_template_by_trigger_normalized(trigger_type)
+        if template:
+            return template["template_code"]
+
+        # Fallback to hardcoded mapping if reference lookup fails
+        fallback_mapping = {
             "claim_submitted": "CLAIM_RECEIVED",
             "claim_paid": "CLAIM_PAID",
             "claim_rejected": "CLAIM_REJECTED",
@@ -733,7 +733,7 @@ class CommunicationProcess(BaseProcess):
             "ArrearsCreated": "ARREARS_NOTICE",
             "PolicySuspended": "SUSPENSION_NOTICE",
         }
-        return mapping.get(trigger_type)
+        return fallback_mapping.get(trigger_type)
 
     def _map_trigger_type(self, trigger_type_str: Optional[str]) -> Optional[TriggerEventType]:
         """Map trigger string to TriggerEventType enum."""
