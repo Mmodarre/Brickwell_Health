@@ -197,7 +197,7 @@ class SuspensionProcess(BaseProcess):
             created_by="SIMULATION",
         )
 
-        self.batch_writer.add("suspension", suspension.model_dump())
+        self.batch_writer.add("regulatory.suspension", suspension.model_dump())
 
         # Generate prorated refund for suspension period
         policy_obj = policy.get("policy")
@@ -219,7 +219,7 @@ class SuspensionProcess(BaseProcess):
                         refund_type="Suspension",
                         member=primary_member,
                     )
-                    self.batch_writer.add("refund", refund.model_dump())
+                    self.batch_writer.add("billing.refund", refund.model_dump())
 
                     logger.debug(
                         "suspension_refund_created",

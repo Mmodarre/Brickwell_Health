@@ -33,6 +33,9 @@ def create_engine_for_worker(config: DatabaseConfig, worker_id: int) -> Engine:
     Each worker gets its own connection pool to avoid contention.
     Connections are labeled with worker ID for debugging.
 
+    Sets search_path to include all schemas as a fallback for ad-hoc queries.
+    Production code uses explicit schema qualification in batch_writer calls.
+
     Args:
         config: Database configuration
         worker_id: Worker process identifier
@@ -42,14 +45,17 @@ def create_engine_for_worker(config: DatabaseConfig, worker_id: int) -> Engine:
     """
     connection_string = get_connection_string(config)
 
+    # Set search path for convenience (batch_writer still uses explicit schema names)
+    search_path = "policy,reference,regulatory,claims,billing,member_lifecycle,crm,communication,digital,survey,nba,public"
+
     engine = create_engine(
         connection_string,
         pool_size=config.pool_size,
         pool_pre_ping=True,
-        # Label connections for debugging + WAL optimization
+        # Label connections for debugging + WAL optimization + multi-schema search path
         connect_args={
             "application_name": f"brickwell_worker_{worker_id}",
-            "options": "-c synchronous_commit=off",  # WAL performance: async commit
+            "options": f"-c synchronous_commit=off -c search_path={search_path}",
         },
     )
 
@@ -62,6 +68,8 @@ def create_engine_from_config(config: DatabaseConfig) -> Engine:
 
     For use in single-process contexts (e.g., database initialization).
 
+    Sets search_path to include all schemas as a fallback for ad-hoc queries.
+
     Args:
         config: Database configuration
 
@@ -70,10 +78,16 @@ def create_engine_from_config(config: DatabaseConfig) -> Engine:
     """
     connection_string = get_connection_string(config)
 
+    # Set search path for convenience during initialization and ad-hoc queries
+    search_path = "policy,reference,regulatory,claims,billing,member_lifecycle,crm,communication,digital,survey,nba,public"
+
     engine = create_engine(
         connection_string,
         pool_size=config.pool_size,
         pool_pre_ping=True,
+        connect_args={
+            "options": f"-c search_path={search_path}",
+        },
     )
 
     return engine

@@ -18,22 +18,24 @@ logger = structlog.get_logger()
 
 # Schema files in dependency order (core tables must be created first)
 SCHEMA_FILES = [
+    # Create all schemas first (must be executed before any table creation)
+    "schema_init.sql",          # Creates 11 schemas: reference, policy, regulatory, claims, billing, member_lifecycle, crm, communication, digital, survey, nba
     # Reference data tables (no dependencies - must be first)
-    "schema_reference.sql",     # product, provider, hospital, benefit_category, etc.
+    "schema_reference.sql",     # product, provider, hospital, benefit_category, etc. (reference schema)
     # Core domains (dependency order matters)
-    "schema_policy.sql",        # member, application, policy, coverage, waiting_period
-    "schema_regulatory.sql",    # lhc_loading, suspension, bank_account (depends on policy)
-    "schema_claims.sql",        # claim, hospital_admission, etc. (depends on policy, member, coverage)
-    "schema_billing.sql",       # invoice, payment, direct_debit (depends on policy, bank_account)
+    "schema_policy.sql",        # member, application, policy, coverage, waiting_period (policy schema)
+    "schema_regulatory.sql",    # lhc_loading, suspension, bank_account (regulatory schema - depends on policy)
+    "schema_claims.sql",        # claim, hospital_admission, etc. (claims schema - depends on policy, member, coverage)
+    "schema_billing.sql",       # invoice, payment, direct_debit (billing schema - depends on policy, bank_account)
     # Extended domains
-    "schema_member_lifecycle.sql",
-    "schema_crm.sql",
-    "schema_communication.sql",
-    "schema_digital.sql",
-    "schema_survey.sql",
-    "schema_nba.sql",           # NBA action catalog, recommendations, executions (depends on member, policy, communication, crm)
+    "schema_member_lifecycle.sql",  # member demographic changes (member_lifecycle schema)
+    "schema_crm.sql",           # interactions, cases, complaints (crm schema)
+    "schema_communication.sql", # campaigns, communications (communication schema)
+    "schema_digital.sql",       # web sessions, digital events (digital schema)
+    "schema_survey.sql",        # NPS/CSAT surveys (survey schema)
+    "schema_nba.sql",           # NBA action catalog, recommendations, executions (nba schema - depends on member, policy, communication, crm)
     # System records (must be last - inserts placeholder data)
-    "schema_system.sql",
+    "schema_system.sql",        # System metadata (stays in public schema)
 ]
 
 
@@ -135,85 +137,107 @@ def _execute_reference_fk_constraints(engine) -> None:
 
 
 def _drop_all_tables(engine) -> None:
-    """Drop all tables in reverse dependency order."""
+    """Drop all tables in reverse dependency order with schema qualification."""
+    # First, drop ALL tables in public schema (CASCADE handles dependencies)
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT tablename FROM pg_tables
+            WHERE schemaname = 'public'
+            AND tablename NOT LIKE 'pg_%'
+        """))
+        public_tables = [row[0] for row in result]
+
+        for table in public_tables:
+            try:
+                conn.execute(text(f"DROP TABLE IF EXISTS public.{table} CASCADE"))
+                logger.debug("dropped_public_table", table=table)
+            except Exception as e:
+                logger.warning("drop_public_table_error", table=table, error=str(e))
+
+        if public_tables:
+            logger.info("dropped_public_tables", count=len(public_tables))
+        conn.commit()
+
+    # Then drop schema-qualified tables
     tables = [
         # NBA Domain (depends on member, policy, communication, crm)
-        "nba_action_execution",
-        "nba_action_recommendation",
-        "nba_action_catalog",
+        "nba.nba_action_execution",
+        "nba.nba_action_recommendation",
+        "nba.nba_action_catalog",
         # Survey Domain
-        "csat_survey",
-        "csat_survey_pending",
-        "nps_survey",
-        "nps_survey_pending",
+        "survey.csat_survey",
+        "survey.csat_survey_pending",
+        "survey.nps_survey",
+        "survey.nps_survey_pending",
         # Digital Domain
-        "digital_event",
-        "web_session",
+        "digital.digital_event",
+        "digital.web_session",
         # Communication Domain
-        "campaign_response",
-        "communication",
-        "campaign",
-        "communication_preference",
+        "communication.campaign_response",
+        "communication.communication",
+        "communication.campaign",
+        "communication.communication_preference",
         # CRM Domain
-        "complaint",
-        "service_case",
-        "interaction",
+        "crm.complaint",
+        "crm.service_case",
+        "crm.interaction",
         # Billing Domain
-        "premium_discount",
-        "refund",
-        "arrears",
-        "direct_debit_result",
-        "direct_debit_mandate",
-        "payment",
-        "invoice",
+        "billing.premium_discount",
+        "billing.refund",
+        "billing.arrears",
+        "billing.direct_debit_result",
+        "billing.payment",
+        "billing.invoice",
         # Claims Domain
-        "benefit_usage",
-        "claim_assessment",
-        "medical_service",
-        "prosthesis_claim",
-        "ambulance_claim",
-        "extras_claim",
-        "hospital_admission",
-        "claim_line",
-        "claim",
+        "claims.benefit_usage",
+        "claims.claim_assessment",
+        "claims.medical_service",
+        "claims.prosthesis_claim",
+        "claims.ambulance_claim",
+        "claims.extras_claim",
+        "claims.hospital_admission",
+        "claims.claim_line",
+        "claims.claim",
+        # Member Lifecycle Domain
+        "member_lifecycle.member_update",
         # Regulatory Domain
-        "bank_account",
-        "upgrade_request",
-        "suspension",
-        "phi_rebate_entitlement",
-        "age_based_discount",
-        "lhc_loading",
+        "billing.direct_debit_mandate",
+        "regulatory.bank_account",
+        "regulatory.upgrade_request",
+        "regulatory.suspension",
+        "regulatory.phi_rebate_entitlement",
+        "regulatory.age_based_discount",
+        "regulatory.lhc_loading",
         # Policy/Member Domain
-        "health_declaration",
-        "waiting_period",
-        "coverage",
-        "policy_member",
-        "policy",
-        "application_member",
-        "application",
-        "member_update",
-        "member",
+        "policy.health_declaration",
+        "policy.waiting_period",
+        "policy.coverage",
+        "policy.policy_member",
+        "policy.policy",
+        "policy.application_member",
+        "policy.application",
+        "policy.member",
         # Reference Tables (drop last - they are referenced by FK constraints)
-        "provider_location",
-        "communication_template",
-        "complaint_category",
-        "case_type",
-        "interaction_outcome",
-        "interaction_type",
-        "mbs_item",
-        "prosthesis_list_item",
-        "extras_item_code",
-        "claim_rejection_reason",
-        "benefit_category",
-        "clinical_category",
-        "hospital",
-        "provider",
-        "excess_option",
-        "product",
-        "product_tier",
-        "campaign_type",
-        "survey_type",
-        "state_territory",
+        "reference.provider_location",
+        "reference.communication_template",
+        "reference.complaint_category",
+        "reference.case_type",
+        "reference.interaction_outcome",
+        "reference.interaction_type",
+        "reference.mbs_item",
+        "reference.prosthesis_list_item",
+        "reference.extras_item_code",
+        "reference.claim_rejection_reason",
+        "reference.benefit_category",
+        "reference.clinical_category",
+        "reference.hospital",
+        "reference.provider",
+        "reference.excess_option",
+        "reference.product",
+        "reference.product_tier",
+        "reference.campaign_type",
+        "reference.survey_type",
+        "reference.state_territory",
     ]
 
     with engine.connect() as conn:
@@ -230,7 +254,10 @@ def _setup_cdc_slot(engine) -> None:
     Set up CDC replication slot and publication for LakeFlow Connect.
 
     Creates a logical replication slot using pgoutput plugin (required by
-    Databricks LakeFlow Connect) and a publication covering all public tables.
+    Databricks LakeFlow Connect) and a publication covering all tables across
+    all schemas (reference, policy, regulatory, claims, billing, member_lifecycle,
+    crm, communication, digital, survey, nba).
+
     Also sets REPLICA IDENTITY FULL on all tables (required for tables without
     primary keys or with TOAST-able columns like TEXT, JSONB).
 
@@ -238,6 +265,12 @@ def _setup_cdc_slot(engine) -> None:
     """
     SLOT_NAME = "lakeflow_slot"
     PUB_NAME = "lakeflow_pub"
+
+    # All schemas to include in CDC
+    SCHEMAS = [
+        "reference", "policy", "regulatory", "claims", "billing",
+        "member_lifecycle", "crm", "communication", "digital", "survey", "nba"
+    ]
 
     with engine.connect() as conn:
         raw_conn = conn.connection.dbapi_connection
@@ -264,34 +297,38 @@ def _setup_cdc_slot(engine) -> None:
                 # Drop existing publication if it exists
                 cursor.execute(f"DROP PUBLICATION IF EXISTS {PUB_NAME}")
 
-                # Get all public tables
-                cursor.execute("""
-                    SELECT table_name
+                # Get all tables from all schemas (not just public)
+                schema_conditions = " OR ".join([f"table_schema = '{s}'" for s in SCHEMAS])
+                cursor.execute(f"""
+                    SELECT table_schema, table_name
                     FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                    WHERE ({schema_conditions}) AND table_type = 'BASE TABLE'
+                    ORDER BY table_schema, table_name
                 """)
                 table_rows = cursor.fetchall()
-                table_names = [row[0] for row in table_rows]
 
-                if table_names:
+                logger.info(f"Found {len(table_rows)} tables across {len(SCHEMAS)} schemas for CDC")
+
+                if table_rows:
                     # Set REPLICA IDENTITY FULL on all tables
                     # Required for LakeFlow to track changes on tables without PKs
                     # or with TOAST-able columns (TEXT, JSONB, etc.)
-                    for table_name in table_names:
+                    for schema, table_name in table_rows:
                         cursor.execute(
-                            f'ALTER TABLE "{table_name}" REPLICA IDENTITY FULL'
+                            f'ALTER TABLE "{schema}"."{table_name}" REPLICA IDENTITY FULL'
                         )
                     logger.info(
                         "replica_identity_set",
                         mode="FULL",
-                        table_count=len(table_names),
+                        table_count=len(table_rows),
+                        schema_count=len(SCHEMAS),
                     )
 
-                    # Create publication for all tables (quote table names)
-                    quoted_tables = [f'"{t}"' for t in table_names]
+                    # Create publication for all schema.table combinations
+                    quoted_tables = [f'"{s}"."{t}"' for s, t in table_rows]
                     tables_csv = ", ".join(quoted_tables)
                     cursor.execute(f"CREATE PUBLICATION {PUB_NAME} FOR TABLE {tables_csv}")
-                    logger.info("publication_created", name=PUB_NAME, table_count=len(table_names))
+                    logger.info("publication_created", name=PUB_NAME, table_count=len(table_rows), schema_count=len(SCHEMAS))
 
                     # Verify publication was created with tables
                     cursor.execute("""

@@ -31,67 +31,65 @@ class BatchWriter:
     """
 
     # Tables in dependency order - parent tables first
+    # Schema-qualified table names (schema.table_name format)
     TABLE_FLUSH_ORDER = [
-        # Core entities (no dependencies)
-        "member",
-        # Member children (depend on member)
-        "member_update",
-        "application",
-        # Application children
-        "application_member",
-        "health_declaration",
-        # Policy (depends on application)
-        "policy",
-        # Policy children
-        "policy_member",
-        "coverage",
-        "bank_account",
-        # Second-level children (depend on policy_member, coverage, bank_account)
-        "waiting_period",
-        "lhc_loading",
-        "age_based_discount",
-        "phi_rebate_entitlement",
-        "suspension",
-        "upgrade_request",
-        "direct_debit_mandate",
-        # Claims (depend on policy, member, coverage)
-        "claim",
-        "claim_line",
-        "hospital_admission",
-        "extras_claim",
-        "ambulance_claim",
-        "prosthesis_claim",
-        "medical_service",
-        "claim_assessment",
-        "benefit_usage",
-        # Billing (depend on policy, invoice)
-        "invoice",
-        "payment",
-        "direct_debit_result",
-        "arrears",
-        "refund",
-        "premium_discount",
-        # CRM Domain (depend on policy, member, claim, invoice)
-        "interaction",
-        "service_case",
-        "complaint",
-        # Communication Domain (depend on policy, member, campaign, interaction)
-        "communication_preference",
-        "campaign",
-        "communication",
-        "campaign_response",
-        # Digital Behavior Domain (depend on member, policy)
-        "web_session",
-        "digital_event",
-        # Survey Domain (depend on member, policy, interaction)
-        "nps_survey_pending",
-        "nps_survey",
-        "csat_survey_pending",
-        "csat_survey",
-        # NBA Domain (depend on member, policy, communication, interaction)
-        "nba_action_catalog",
-        "nba_action_recommendation",
-        "nba_action_execution",
+        # Policy schema - core entities (no dependencies within schema)
+        "policy.member",
+        "policy.application",
+        "policy.application_member",
+        "policy.health_declaration",
+        "policy.policy",
+        "policy.policy_member",
+        "policy.coverage",
+        "policy.waiting_period",
+        # Regulatory schema (depends on policy)
+        "regulatory.bank_account",
+        "regulatory.lhc_loading",
+        "regulatory.age_based_discount",
+        "regulatory.phi_rebate_entitlement",
+        "regulatory.suspension",
+        "regulatory.upgrade_request",
+        # Claims schema (depends on policy, parallel with billing)
+        "claims.claim",
+        "claims.claim_line",
+        "claims.hospital_admission",
+        "claims.extras_claim",
+        "claims.ambulance_claim",
+        "claims.prosthesis_claim",
+        "claims.medical_service",
+        "claims.claim_assessment",
+        "claims.benefit_usage",
+        # Billing schema (depends on policy, regulatory, parallel with claims)
+        "billing.direct_debit_mandate",
+        "billing.invoice",
+        "billing.payment",
+        "billing.direct_debit_result",
+        "billing.arrears",
+        "billing.refund",
+        "billing.premium_discount",
+        # Member lifecycle schema (depends on policy)
+        "member_lifecycle.member_update",
+        # CRM schema (depends on policy, claims, billing)
+        "crm.interaction",
+        "crm.service_case",
+        "crm.complaint",
+        # Communication schema (depends on policy, crm)
+        "communication.communication_preference",
+        "communication.campaign",
+        "communication.communication",
+        "communication.campaign_response",
+        # Digital schema (depends on policy)
+        "digital.web_session",
+        "digital.digital_event",
+        # Survey schema (depends on policy, crm)
+        "survey.nps_survey_pending",
+        "survey.nps_survey",
+        "survey.csat_survey_pending",
+        "survey.csat_survey",
+        # NBA schema (depends on all upstream schemas)
+        "nba.nba_action_catalog",
+        "nba.nba_action_recommendation",
+        "nba.nba_action_execution",
     ]
 
     def __init__(self, engine: Engine, batch_size: int = 10000):

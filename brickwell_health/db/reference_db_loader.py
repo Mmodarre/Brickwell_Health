@@ -348,7 +348,7 @@ class ReferenceDataDBLoader:
             with raw_conn.cursor() as cursor:
                 # Use COPY FROM STDIN with text format
                 with cursor.copy(
-                    f"COPY {table_name} ({columns_str}) FROM STDIN WITH (FORMAT text, NULL '\\N')"
+                    f"COPY reference.{table_name} ({columns_str}) FROM STDIN WITH (FORMAT text, NULL '\\N')"
                 ) as copy:
                     copy.write(data.encode("utf-8"))
 

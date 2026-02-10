@@ -487,7 +487,7 @@ class PolicyLifecycleProcess(BaseProcess):
             created_by="SIMULATION",
         )
 
-        self.batch_writer.add("upgrade_request", upgrade_request.model_dump())
+        self.batch_writer.add("regulatory.upgrade_request", upgrade_request.model_dump())
 
         # Update policy tier and product in memory
         policy["tier"] = new_tier
@@ -558,7 +558,7 @@ class PolicyLifecycleProcess(BaseProcess):
             created_by="SIMULATION",
         )
 
-        self.batch_writer.add("upgrade_request", downgrade_request.model_dump())
+        self.batch_writer.add("regulatory.upgrade_request", downgrade_request.model_dump())
 
         # Update policy tier and product in memory
         policy["tier"] = new_tier
@@ -615,7 +615,7 @@ class PolicyLifecycleProcess(BaseProcess):
                         refund_type="Cancellation",
                         member=primary_member,
                     )
-                    self.batch_writer.add("refund", refund.model_dump())
+                    self.batch_writer.add("billing.refund", refund.model_dump())
 
                     logger.debug(
                         "cancellation_refund_created",

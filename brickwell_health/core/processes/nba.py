@@ -600,7 +600,7 @@ class NBAActionProcess(BaseProcess):
             simulation_date=self.sim_env.current_date,
         )
 
-        self.batch_writer.add("nba_action_execution", execution.model_dump_db())
+        self.batch_writer.add("nba.nba_action_execution", execution.model_dump_db())
         self._stats["executions_recorded"] += 1
 
     def _update_recommendation_status(

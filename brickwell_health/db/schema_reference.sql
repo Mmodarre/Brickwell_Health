@@ -4,7 +4,7 @@
 -- =============================================================================
 
 -- PRODUCT_TIER: Hospital cover tier classifications (Gold, Silver, Bronze, Basic)
-CREATE TABLE IF NOT EXISTS product_tier (
+CREATE TABLE IF NOT EXISTS reference.product_tier (
     product_tier_id         INTEGER PRIMARY KEY,
     tier_code               VARCHAR(50) NOT NULL UNIQUE,
     tier_name               VARCHAR(100) NOT NULL,
@@ -18,11 +18,11 @@ CREATE TABLE IF NOT EXISTS product_tier (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_product_tier_code ON product_tier(tier_code);
-CREATE INDEX IF NOT EXISTS idx_product_tier_level ON product_tier(tier_level);
+CREATE INDEX IF NOT EXISTS idx_product_tier_code ON reference.product_tier(tier_code);
+CREATE INDEX IF NOT EXISTS idx_product_tier_level ON reference.product_tier(tier_level);
 
 -- EXCESS_OPTION: Hospital excess configurations per product
-CREATE TABLE IF NOT EXISTS excess_option (
+CREATE TABLE IF NOT EXISTS reference.excess_option (
     excess_option_id        INTEGER PRIMARY KEY,
     product_id              INTEGER NOT NULL,
     excess_amount           DECIMAL(10,2) NOT NULL,
@@ -40,12 +40,12 @@ CREATE TABLE IF NOT EXISTS excess_option (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_excess_option_product ON excess_option(product_id);
-CREATE INDEX IF NOT EXISTS idx_excess_option_type ON excess_option(excess_type);
-CREATE INDEX IF NOT EXISTS idx_excess_option_active ON excess_option(is_active);
+CREATE INDEX IF NOT EXISTS idx_excess_option_product ON reference.excess_option(product_id);
+CREATE INDEX IF NOT EXISTS idx_excess_option_type ON reference.excess_option(excess_type);
+CREATE INDEX IF NOT EXISTS idx_excess_option_active ON reference.excess_option(is_active);
 
 -- CAMPAIGN_TYPE: Marketing campaign type classifications
-CREATE TABLE IF NOT EXISTS campaign_type (
+CREATE TABLE IF NOT EXISTS reference.campaign_type (
     type_id                 INTEGER PRIMARY KEY,
     type_code               VARCHAR(50) NOT NULL UNIQUE,
     type_name               VARCHAR(255) NOT NULL,
@@ -58,10 +58,10 @@ CREATE TABLE IF NOT EXISTS campaign_type (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_campaign_type_code ON campaign_type(type_code);
+CREATE INDEX IF NOT EXISTS idx_campaign_type_code ON reference.campaign_type(type_code);
 
 -- SURVEY_TYPE: Survey type classifications (NPS, CSAT)
-CREATE TABLE IF NOT EXISTS survey_type (
+CREATE TABLE IF NOT EXISTS reference.survey_type (
     type_id                 INTEGER PRIMARY KEY,
     type_code               VARCHAR(50) NOT NULL UNIQUE,
     type_name               VARCHAR(255) NOT NULL,
@@ -73,13 +73,13 @@ CREATE TABLE IF NOT EXISTS survey_type (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_survey_type_code ON survey_type(type_code);
-CREATE INDEX IF NOT EXISTS idx_survey_type_class ON survey_type(survey_class);
-CREATE INDEX IF NOT EXISTS idx_survey_type_trigger ON survey_type(trigger_event);
+CREATE INDEX IF NOT EXISTS idx_survey_type_code ON reference.survey_type(type_code);
+CREATE INDEX IF NOT EXISTS idx_survey_type_class ON reference.survey_type(survey_class);
+CREATE INDEX IF NOT EXISTS idx_survey_type_trigger ON reference.survey_type(trigger_event);
 
 -- STATE_TERRITORY: Australian states and territories
 -- Must be created first as it may be referenced by other tables
-CREATE TABLE IF NOT EXISTS state_territory (
+CREATE TABLE IF NOT EXISTS reference.state_territory (
     state_territory_id      INTEGER PRIMARY KEY,
     state_code              VARCHAR(10) NOT NULL UNIQUE,
     state_name              VARCHAR(100) NOT NULL,
@@ -91,10 +91,10 @@ CREATE TABLE IF NOT EXISTS state_territory (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_state_code ON state_territory(state_code);
+CREATE INDEX IF NOT EXISTS idx_state_code ON reference.state_territory(state_code);
 
 -- PRODUCT: Insurance product catalog
-CREATE TABLE IF NOT EXISTS product (
+CREATE TABLE IF NOT EXISTS reference.product (
     product_id              INTEGER PRIMARY KEY,
     product_code            VARCHAR(50) NOT NULL UNIQUE,
     product_name            VARCHAR(255) NOT NULL,
@@ -119,12 +119,12 @@ CREATE TABLE IF NOT EXISTS product (
     modified_by             VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_product_code ON product(product_code);
-CREATE INDEX IF NOT EXISTS idx_product_status ON product(status);
-CREATE INDEX IF NOT EXISTS idx_product_tier ON product(product_tier_id);
+CREATE INDEX IF NOT EXISTS idx_product_code ON reference.product(product_code);
+CREATE INDEX IF NOT EXISTS idx_product_status ON reference.product(status);
+CREATE INDEX IF NOT EXISTS idx_product_tier ON reference.product(product_tier_id);
 
 -- PROVIDER: Healthcare providers (doctors, specialists, allied health)
-CREATE TABLE IF NOT EXISTS provider (
+CREATE TABLE IF NOT EXISTS reference.provider (
     provider_id             INTEGER PRIMARY KEY,
     provider_number         VARCHAR(50) NOT NULL UNIQUE,
     provider_type_id        INTEGER NOT NULL,
@@ -149,13 +149,13 @@ CREATE TABLE IF NOT EXISTS provider (
     modified_by             VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_provider_number ON provider(provider_number);
-CREATE INDEX IF NOT EXISTS idx_provider_type ON provider(provider_type_id);
-CREATE INDEX IF NOT EXISTS idx_provider_status ON provider(status);
-CREATE INDEX IF NOT EXISTS idx_provider_specialty ON provider(specialty_id);
+CREATE INDEX IF NOT EXISTS idx_provider_number ON reference.provider(provider_number);
+CREATE INDEX IF NOT EXISTS idx_provider_type ON reference.provider(provider_type_id);
+CREATE INDEX IF NOT EXISTS idx_provider_status ON reference.provider(status);
+CREATE INDEX IF NOT EXISTS idx_provider_specialty ON reference.provider(specialty_id);
 
 -- HOSPITAL: Hospital facilities
-CREATE TABLE IF NOT EXISTS hospital (
+CREATE TABLE IF NOT EXISTS reference.hospital (
     hospital_id             INTEGER PRIMARY KEY,
     hospital_code           VARCHAR(50) NOT NULL UNIQUE,
     hospital_name           VARCHAR(255) NOT NULL,
@@ -183,12 +183,12 @@ CREATE TABLE IF NOT EXISTS hospital (
     modified_by             VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_hospital_code ON hospital(hospital_code);
-CREATE INDEX IF NOT EXISTS idx_hospital_state ON hospital(state);
-CREATE INDEX IF NOT EXISTS idx_hospital_status ON hospital(status);
+CREATE INDEX IF NOT EXISTS idx_hospital_code ON reference.hospital(hospital_code);
+CREATE INDEX IF NOT EXISTS idx_hospital_state ON reference.hospital(state);
+CREATE INDEX IF NOT EXISTS idx_hospital_status ON reference.hospital(status);
 
 -- CLINICAL_CATEGORY: Hospital clinical categories (38 categories)
-CREATE TABLE IF NOT EXISTS clinical_category (
+CREATE TABLE IF NOT EXISTS reference.clinical_category (
     clinical_category_id    INTEGER PRIMARY KEY,
     category_code           VARCHAR(50) NOT NULL UNIQUE,
     category_name           VARCHAR(255) NOT NULL,
@@ -206,15 +206,15 @@ CREATE TABLE IF NOT EXISTS clinical_category (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_clinical_category_code ON clinical_category(category_code);
-CREATE INDEX IF NOT EXISTS idx_clinical_category_active ON clinical_category(is_active);
+CREATE INDEX IF NOT EXISTS idx_clinical_category_code ON reference.clinical_category(category_code);
+CREATE INDEX IF NOT EXISTS idx_clinical_category_active ON reference.clinical_category(is_active);
 
 -- BENEFIT_CATEGORY: Extras and hospital benefit categories
-CREATE TABLE IF NOT EXISTS benefit_category (
+CREATE TABLE IF NOT EXISTS reference.benefit_category (
     benefit_category_id     INTEGER PRIMARY KEY,
     category_code           VARCHAR(50) NOT NULL UNIQUE,
     category_name           VARCHAR(255) NOT NULL,
-    parent_category_id      INTEGER REFERENCES benefit_category(benefit_category_id),
+    parent_category_id      INTEGER REFERENCES reference.benefit_category(benefit_category_id),
     category_type           VARCHAR(50),
     description             TEXT,
     is_active               BOOLEAN NOT NULL DEFAULT TRUE,
@@ -224,21 +224,21 @@ CREATE TABLE IF NOT EXISTS benefit_category (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_benefit_category_code ON benefit_category(category_code);
-CREATE INDEX IF NOT EXISTS idx_benefit_category_parent ON benefit_category(parent_category_id);
+CREATE INDEX IF NOT EXISTS idx_benefit_category_code ON reference.benefit_category(category_code);
+CREATE INDEX IF NOT EXISTS idx_benefit_category_parent ON reference.benefit_category(parent_category_id);
 
 -- CLAIM_REJECTION_REASON: Reasons for claim rejection
-CREATE TABLE IF NOT EXISTS claim_rejection_reason (
+CREATE TABLE IF NOT EXISTS reference.claim_rejection_reason (
     rejection_reason_id     INTEGER PRIMARY KEY,
     reason_code             VARCHAR(50) NOT NULL UNIQUE,
     reason_description      VARCHAR(255) NOT NULL,
     category                VARCHAR(50) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_rejection_reason_code ON claim_rejection_reason(reason_code);
+CREATE INDEX IF NOT EXISTS idx_rejection_reason_code ON reference.claim_rejection_reason(reason_code);
 
 -- EXTRAS_ITEM_CODE: Extras/ancillary service codes (dental, optical, etc.)
-CREATE TABLE IF NOT EXISTS extras_item_code (
+CREATE TABLE IF NOT EXISTS reference.extras_item_code (
     extras_item_id          INTEGER PRIMARY KEY,
     item_code               VARCHAR(50) NOT NULL UNIQUE,
     item_description        VARCHAR(255) NOT NULL,
@@ -252,11 +252,11 @@ CREATE TABLE IF NOT EXISTS extras_item_code (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_extras_item_code ON extras_item_code(item_code);
-CREATE INDEX IF NOT EXISTS idx_extras_service_type ON extras_item_code(service_type_id);
+CREATE INDEX IF NOT EXISTS idx_extras_item_code ON reference.extras_item_code(item_code);
+CREATE INDEX IF NOT EXISTS idx_extras_service_type ON reference.extras_item_code(service_type_id);
 
 -- PROSTHESIS_LIST_ITEM: Prosthesis items (implants, devices)
-CREATE TABLE IF NOT EXISTS prosthesis_list_item (
+CREATE TABLE IF NOT EXISTS reference.prosthesis_list_item (
     prosthesis_item_id      INTEGER PRIMARY KEY,
     prosthesis_category_id  INTEGER NOT NULL,
     billing_code            VARCHAR(50) NOT NULL UNIQUE,
@@ -274,11 +274,11 @@ CREATE TABLE IF NOT EXISTS prosthesis_list_item (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_prosthesis_billing_code ON prosthesis_list_item(billing_code);
-CREATE INDEX IF NOT EXISTS idx_prosthesis_category ON prosthesis_list_item(prosthesis_category_id);
+CREATE INDEX IF NOT EXISTS idx_prosthesis_billing_code ON reference.prosthesis_list_item(billing_code);
+CREATE INDEX IF NOT EXISTS idx_prosthesis_category ON reference.prosthesis_list_item(prosthesis_category_id);
 
 -- MBS_ITEM: Medicare Benefits Schedule items
-CREATE TABLE IF NOT EXISTS mbs_item (
+CREATE TABLE IF NOT EXISTS reference.mbs_item (
     mbs_item_id             INTEGER PRIMARY KEY,
     item_number             VARCHAR(10) NOT NULL UNIQUE,
     item_description        TEXT NOT NULL,
@@ -298,11 +298,11 @@ CREATE TABLE IF NOT EXISTS mbs_item (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_mbs_item_number ON mbs_item(item_number);
-CREATE INDEX IF NOT EXISTS idx_mbs_category ON mbs_item(category_id);
+CREATE INDEX IF NOT EXISTS idx_mbs_item_number ON reference.mbs_item(item_number);
+CREATE INDEX IF NOT EXISTS idx_mbs_category ON reference.mbs_item(category_id);
 
 -- INTERACTION_TYPE: CRM interaction types
-CREATE TABLE IF NOT EXISTS interaction_type (
+CREATE TABLE IF NOT EXISTS reference.interaction_type (
     interaction_type_id     INTEGER PRIMARY KEY,
     type_code               VARCHAR(50) NOT NULL UNIQUE,
     type_name               VARCHAR(255) NOT NULL,
@@ -314,11 +314,11 @@ CREATE TABLE IF NOT EXISTS interaction_type (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_interaction_type_code ON interaction_type(type_code);
-CREATE INDEX IF NOT EXISTS idx_interaction_type_category ON interaction_type(type_category);
+CREATE INDEX IF NOT EXISTS idx_interaction_type_code ON reference.interaction_type(type_code);
+CREATE INDEX IF NOT EXISTS idx_interaction_type_category ON reference.interaction_type(type_category);
 
 -- INTERACTION_OUTCOME: CRM interaction outcomes
-CREATE TABLE IF NOT EXISTS interaction_outcome (
+CREATE TABLE IF NOT EXISTS reference.interaction_outcome (
     outcome_id              INTEGER PRIMARY KEY,
     outcome_code            VARCHAR(50) NOT NULL UNIQUE,
     outcome_name            VARCHAR(255) NOT NULL,
@@ -328,10 +328,10 @@ CREATE TABLE IF NOT EXISTS interaction_outcome (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_outcome_code ON interaction_outcome(outcome_code);
+CREATE INDEX IF NOT EXISTS idx_outcome_code ON reference.interaction_outcome(outcome_code);
 
 -- CASE_TYPE: Service case types
-CREATE TABLE IF NOT EXISTS case_type (
+CREATE TABLE IF NOT EXISTS reference.case_type (
     case_type_id            INTEGER PRIMARY KEY,
     type_code               VARCHAR(50) NOT NULL UNIQUE,
     type_name               VARCHAR(255) NOT NULL,
@@ -345,14 +345,14 @@ CREATE TABLE IF NOT EXISTS case_type (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_case_type_code ON case_type(type_code);
+CREATE INDEX IF NOT EXISTS idx_case_type_code ON reference.case_type(type_code);
 
 -- COMPLAINT_CATEGORY: Complaint categories
-CREATE TABLE IF NOT EXISTS complaint_category (
+CREATE TABLE IF NOT EXISTS reference.complaint_category (
     complaint_category_id   INTEGER PRIMARY KEY,
     category_code           VARCHAR(50) NOT NULL UNIQUE,
     category_name           VARCHAR(255) NOT NULL,
-    parent_category_id      INTEGER REFERENCES complaint_category(complaint_category_id),
+    parent_category_id      INTEGER REFERENCES reference.complaint_category(complaint_category_id),
     sla_days                INTEGER,
     phio_reportable         BOOLEAN DEFAULT FALSE,
     is_active               BOOLEAN NOT NULL DEFAULT TRUE,
@@ -360,10 +360,10 @@ CREATE TABLE IF NOT EXISTS complaint_category (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_complaint_category_code ON complaint_category(category_code);
+CREATE INDEX IF NOT EXISTS idx_complaint_category_code ON reference.complaint_category(category_code);
 
 -- COMMUNICATION_TEMPLATE: Communication templates
-CREATE TABLE IF NOT EXISTS communication_template (
+CREATE TABLE IF NOT EXISTS reference.communication_template (
     template_id             INTEGER PRIMARY KEY,
     template_code           VARCHAR(50) NOT NULL UNIQUE,
     template_name           VARCHAR(255) NOT NULL,
@@ -376,14 +376,14 @@ CREATE TABLE IF NOT EXISTS communication_template (
     created_by              VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_template_code ON communication_template(template_code);
-CREATE INDEX IF NOT EXISTS idx_template_trigger ON communication_template(trigger_event);
+CREATE INDEX IF NOT EXISTS idx_template_code ON reference.communication_template(template_code);
+CREATE INDEX IF NOT EXISTS idx_template_trigger ON reference.communication_template(trigger_event);
 
 -- PROVIDER_LOCATION: Provider office locations
 -- Must be created after provider table
-CREATE TABLE IF NOT EXISTS provider_location (
+CREATE TABLE IF NOT EXISTS reference.provider_location (
     provider_location_id    INTEGER PRIMARY KEY,
-    provider_id             INTEGER NOT NULL REFERENCES provider(provider_id),
+    provider_id             INTEGER NOT NULL REFERENCES reference.provider(provider_id),
     location_name           VARCHAR(255),
     address_line_1          VARCHAR(255),
     address_line_2          VARCHAR(255),
@@ -406,5 +406,5 @@ CREATE TABLE IF NOT EXISTS provider_location (
     modified_by             VARCHAR(100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_provider_location_provider ON provider_location(provider_id);
-CREATE INDEX IF NOT EXISTS idx_provider_location_state ON provider_location(state);
+CREATE INDEX IF NOT EXISTS idx_provider_location_provider ON reference.provider_location(provider_id);
+CREATE INDEX IF NOT EXISTS idx_provider_location_state ON reference.provider_location(state);

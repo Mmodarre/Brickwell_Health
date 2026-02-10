@@ -217,9 +217,9 @@ class AcquisitionProcess(BaseProcess):
         self.increment_stat("applications_submitted")
 
         # Write application and application members
-        self.batch_writer.add("application", application.model_dump_db())
+        self.batch_writer.add("policy.application", application.model_dump_db())
         for app_member in app_members:
-            self.batch_writer.add("application_member", app_member.model_dump_db())
+            self.batch_writer.add("policy.application_member", app_member.model_dump_db())
 
         # Generate and write health declarations for all application members
         health_declarations = self.app_gen.generate_health_declarations(
@@ -228,7 +228,7 @@ class AcquisitionProcess(BaseProcess):
             declaration_date=self.sim_env.current_datetime,
         )
         for declaration in health_declarations:
-            self.batch_writer.add("health_declaration", declaration.model_dump())
+            self.batch_writer.add("policy.health_declaration", declaration.model_dump())
 
         self.increment_stat("health_declarations", len(health_declarations))
 
@@ -271,7 +271,7 @@ class AcquisitionProcess(BaseProcess):
 
         # Write members
         for member in members:
-            self.batch_writer.add("member", member.model_dump_db())
+            self.batch_writer.add("policy.member", member.model_dump_db())
             self._members_created += 1
             self.increment_stat("members_created")
 
@@ -281,9 +281,9 @@ class AcquisitionProcess(BaseProcess):
             members=members,
         )
 
-        self.batch_writer.add("policy", policy.model_dump_db())
+        self.batch_writer.add("policy.policy", policy.model_dump_db())
         for pm in policy_members:
-            self.batch_writer.add("policy_member", pm.model_dump_db())
+            self.batch_writer.add("policy.policy_member", pm.model_dump_db())
 
         self._policies_created += 1
         self.increment_stat("policies_created")
@@ -291,7 +291,7 @@ class AcquisitionProcess(BaseProcess):
         # Create coverages
         coverages = self.coverage_gen.generate_coverages_for_policy(policy)
         for coverage in coverages:
-            self.batch_writer.add("coverage", coverage.model_dump_db())
+            self.batch_writer.add("policy.coverage", coverage.model_dump_db())
 
         # Index coverages by type for shared state
         coverage_by_type = {}
@@ -317,18 +317,18 @@ class AcquisitionProcess(BaseProcess):
                 for wp in waiting_periods
             ]
             for wp in waiting_periods:
-                self.batch_writer.add("waiting_period", wp.model_dump_db())
+                self.batch_writer.add("policy.waiting_period", wp.model_dump_db())
 
         # Create regulatory records
         regulatory = self.regulatory_gen.generate_all_regulatory_records(
             policy, members, policy.effective_date
         )
         for lhc in regulatory["lhc_loadings"]:
-            self.batch_writer.add("lhc_loading", lhc.model_dump())
+            self.batch_writer.add("regulatory.lhc_loading", lhc.model_dump())
         for age_disc in regulatory["age_discounts"]:
-            self.batch_writer.add("age_based_discount", age_disc.model_dump())
+            self.batch_writer.add("regulatory.age_based_discount", age_disc.model_dump())
         for rebate in regulatory["rebate_entitlements"]:
-            self.batch_writer.add("phi_rebate_entitlement", rebate.model_dump())
+            self.batch_writer.add("regulatory.phi_rebate_entitlement", rebate.model_dump())
 
         # Calculate total LHC loading percentage
         total_lhc_pct = sum(lhc.loading_percentage for lhc in regulatory["lhc_loadings"])
@@ -349,12 +349,12 @@ class AcquisitionProcess(BaseProcess):
         bank_account = self.billing_gen.generate_bank_account(
             primary_member, policy
         )
-        self.batch_writer.add("bank_account", bank_account.model_dump())
+        self.batch_writer.add("regulatory.bank_account", bank_account.model_dump())
 
         mandate = self.billing_gen.generate_direct_debit_mandate(
             policy, bank_account, policy.effective_date
         )
-        self.batch_writer.add("direct_debit_mandate", mandate.model_dump())
+        self.batch_writer.add("billing.direct_debit_mandate", mandate.model_dump())
 
         # Populate shared state for other processes
         if self.shared_state is not None:
@@ -428,7 +428,7 @@ class AcquisitionProcess(BaseProcess):
                     policy_id=policy.policy_id,
                 )
                 for pref in preferences:
-                    self.batch_writer.add("communication_preference", pref.model_dump_db())
+                    self.batch_writer.add("communication.communication_preference", pref.model_dump_db())
 
                 # Cache preferences in shared state for runtime lookups
                 pref_cache = {}

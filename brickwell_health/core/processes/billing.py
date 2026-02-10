@@ -202,7 +202,7 @@ class BillingProcess(BaseProcess):
                 rebate_pct=Decimal(str(policy_data.get("rebate_pct", 0))),
             )
 
-            self.batch_writer.add("invoice", invoice.model_dump_db())
+            self.batch_writer.add("billing.invoice", invoice.model_dump_db())
 
             # Track pending invoice with retry tracking
             self.pending_invoices[invoice.invoice_id] = {
@@ -281,7 +281,7 @@ class BillingProcess(BaseProcess):
                 payment_date=current_date,
                 payment_method=PaymentMethod.DIRECT_DEBIT,
             )
-            self.batch_writer.add("payment", payment.model_dump_db())
+            self.batch_writer.add("billing.payment", payment.model_dump_db())
 
             # Flush to commit PENDING state before updating (for CDC)
             self.batch_writer.flush_for_cdc("payment", "payment_id", payment.payment_id)
@@ -304,7 +304,7 @@ class BillingProcess(BaseProcess):
                     retry_scheduled=False,
                     retry_date=None,
                 )
-                self.batch_writer.add("direct_debit_result", result.model_dump())
+                self.batch_writer.add("billing.direct_debit_result", result.model_dump())
 
                 # Update invoice status in memory and in buffer/DB
                 self.billing_gen.mark_invoice_paid(invoice, payment)
@@ -382,7 +382,7 @@ class BillingProcess(BaseProcess):
                     retry_scheduled=retry_scheduled,
                     retry_date=next_retry,
                 )
-                self.batch_writer.add("direct_debit_result", result.model_dump())
+                self.batch_writer.add("billing.direct_debit_result", result.model_dump())
 
                 self.increment_stat("payments_failed")
 
@@ -453,7 +453,7 @@ class BillingProcess(BaseProcess):
                     days_overdue=days_overdue,
                 )
 
-                self.batch_writer.add("arrears", arrears.model_dump())
+                self.batch_writer.add("billing.arrears", arrears.model_dump())
                 invoice_data["arrears_created"] = True
 
                 self.increment_stat("arrears_created")

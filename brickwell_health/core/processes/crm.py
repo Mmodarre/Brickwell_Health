@@ -363,7 +363,7 @@ class CRMProcess(BaseProcess):
         )
 
         # Write to batch
-        self.batch_writer.add("interaction", interaction.model_dump_db())
+        self.batch_writer.add("crm.interaction", interaction.model_dump_db())
         self._stats["interactions_created"] += 1
         self._stats["nba_interactions_created"] = self._stats.get(
             "nba_interactions_created", 0
@@ -753,7 +753,7 @@ class CRMProcess(BaseProcess):
         )
 
         # INSERT to database
-        self.batch_writer.add("interaction", interaction.model_dump_db())
+        self.batch_writer.add("crm.interaction", interaction.model_dump_db())
         self._stats["interactions_created"] += 1
 
         # Link to active journey if one exists
@@ -837,7 +837,7 @@ class CRMProcess(BaseProcess):
         )
 
         # INSERT to database (initial state: OPEN)
-        self.batch_writer.add("service_case", case.model_dump_db())
+        self.batch_writer.add("crm.service_case", case.model_dump_db())
         self._stats["cases_created"] += 1
 
         # Link to active journey if one exists
@@ -874,7 +874,7 @@ class CRMProcess(BaseProcess):
         )
 
         # INSERT to database (initial state: RECEIVED)
-        self.batch_writer.add("complaint", complaint.model_dump_db())
+        self.batch_writer.add("crm.complaint", complaint.model_dump_db())
         self._stats["complaints_created"] += 1
 
         # Link to active journey if one exists
@@ -919,7 +919,7 @@ class CRMProcess(BaseProcess):
                         interaction_type_code=interaction_type,
                     )
 
-                    self.batch_writer.add("interaction", interaction.model_dump_db())
+                    self.batch_writer.add("crm.interaction", interaction.model_dump_db())
                     self._stats["interactions_created"] += 1
                     self._stats["baseline_interactions"] += 1
 

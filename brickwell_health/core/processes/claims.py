@@ -464,9 +464,9 @@ class ClaimsProcess(BaseProcess):
             additional_gap = original_benefit - capped_benefit
 
         # Write claim as SUBMITTED with ORIGINAL uncapped amounts (audit trail)
-        self.batch_writer.add("claim", claim.model_dump_db())
-        self.batch_writer.add("claim_line", claim_line.model_dump())
-        self.batch_writer.add("extras_claim", extras_claim.model_dump_db())
+        self.batch_writer.add("claims.claim", claim.model_dump_db())
+        self.batch_writer.add("claims.claim_line", claim_line.model_dump())
+        self.batch_writer.add("claims.extras_claim", extras_claim.model_dump_db())
 
         # Step 6: Schedule lifecycle transitions (benefit usage recorded when PAID)
         # Store capping info for application during ASSESSED transition
@@ -579,18 +579,18 @@ class ClaimsProcess(BaseProcess):
                         object.__setattr__(claim, key, value)
 
         # Write claim as SUBMITTED
-        self.batch_writer.add("claim", claim.model_dump_db())
+        self.batch_writer.add("claims.claim", claim.model_dump_db())
         for cl in claim_lines:
-            self.batch_writer.add("claim_line", cl.model_dump())
-        self.batch_writer.add("hospital_admission", admission.model_dump_db())
+            self.batch_writer.add("claims.claim_line", cl.model_dump())
+        self.batch_writer.add("claims.hospital_admission", admission.model_dump_db())
 
         # Write prosthesis claims if any
         for prosthesis in prosthesis_claims:
-            self.batch_writer.add("prosthesis_claim", prosthesis.model_dump())
+            self.batch_writer.add("claims.prosthesis_claim", prosthesis.model_dump())
 
         # Write medical services (MBS items billed by doctors)
         for medical_service in medical_services:
-            self.batch_writer.add("medical_service", medical_service.model_dump())
+            self.batch_writer.add("claims.medical_service", medical_service.model_dump())
 
         # Get discharge date for lodgement (hospital claims lodge on discharge)
         lodgement_date = admission.discharge_date or admission_date
@@ -672,8 +672,8 @@ class ClaimsProcess(BaseProcess):
                         object.__setattr__(claim, key, value)
 
         # Write claim as SUBMITTED
-        self.batch_writer.add("claim", claim.model_dump_db())
-        self.batch_writer.add("ambulance_claim", ambulance.model_dump())
+        self.batch_writer.add("claims.claim", claim.model_dump_db())
+        self.batch_writer.add("claims.ambulance_claim", ambulance.model_dump())
 
         # Ambulance claims don't have claim_lines in the traditional sense
         # We don't track them separately, but schedule transitions for the main claim
@@ -737,8 +737,8 @@ class ClaimsProcess(BaseProcess):
         )
 
         # Write claim and claim line as SUBMITTED
-        self.batch_writer.add("claim", claim.model_dump_db())
-        self.batch_writer.add("claim_line", claim_line.model_dump())
+        self.batch_writer.add("claims.claim", claim.model_dump_db())
+        self.batch_writer.add("claims.claim_line", claim_line.model_dump())
 
         # Schedule lifecycle transitions: SUBMITTED -> ASSESSED -> REJECTED
         self._schedule_claim_transitions(
@@ -962,7 +962,7 @@ class ClaimsProcess(BaseProcess):
 
                 # Create claim assessment audit record
                 assessment = self._create_claim_assessment(claim_id, data)
-                self.batch_writer.add("claim_assessment", assessment.model_dump())
+                self.batch_writer.add("claims.claim_assessment", assessment.model_dump())
 
                 self._update_claim_status(
                     claim_id,
@@ -1535,7 +1535,7 @@ class ClaimsProcess(BaseProcess):
             created_by="SIMULATION",
         )
 
-        self.batch_writer.add("benefit_usage", usage.model_dump())
+        self.batch_writer.add("claims.benefit_usage", usage.model_dump())
 
     def add_member(
         self,
@@ -1689,8 +1689,8 @@ class ClaimsProcess(BaseProcess):
             created_at=self.sim_env.current_datetime,
         )
 
-        self.batch_writer.add("claim", claim.model_dump_db())
-        self.batch_writer.add("claim_line", claim_line.model_dump())
+        self.batch_writer.add("claims.claim", claim.model_dump_db())
+        self.batch_writer.add("claims.claim_line", claim_line.model_dump())
 
         # Schedule lifecycle transitions (duplicates pass initial checks)
         self._schedule_claim_transitions(
@@ -1800,8 +1800,8 @@ class ClaimsProcess(BaseProcess):
                 )
 
             # Write claim and line
-            self.batch_writer.add("claim", frag_claim.model_dump_db())
-            self.batch_writer.add("claim_line", frag_line.model_dump())
+            self.batch_writer.add("claims.claim", frag_claim.model_dump_db())
+            self.batch_writer.add("claims.claim_line", frag_line.model_dump())
 
             # Write detail records for first fragment only
             if i == 0:
@@ -1811,7 +1811,7 @@ class ClaimsProcess(BaseProcess):
                         "benefit_amount": frag_benefit,
                     })
                     self.batch_writer.add(
-                        "extras_claim", updated_extras.model_dump_db(),
+                        "claims.extras_claim", updated_extras.model_dump_db(),
                     )
                 if hospital_records:
                     for table_name, record_data in hospital_records:

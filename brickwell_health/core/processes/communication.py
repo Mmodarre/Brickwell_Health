@@ -255,7 +255,7 @@ class CommunicationProcess(BaseProcess):
         )
 
         # Write to batch
-        self.batch_writer.add("communication", communication.model_dump_db())
+        self.batch_writer.add("communication.communication", communication.model_dump_db())
         self._stats["nba_communications_sent"] = self._stats.get(
             "nba_communications_sent", 0
         ) + 1
@@ -304,7 +304,7 @@ class CommunicationProcess(BaseProcess):
             interaction_id=event.get("interaction_id"),
         )
 
-        self.batch_writer.add("communication", communication.model_dump_db())
+        self.batch_writer.add("communication.communication", communication.model_dump_db())
         self._stats["transactional_sent"] += 1
 
         # Track for fatigue
@@ -359,7 +359,7 @@ class CommunicationProcess(BaseProcess):
             start_date=start_date,
         )
 
-        self.batch_writer.add("campaign", campaign.model_dump_db())
+        self.batch_writer.add("communication.campaign", campaign.model_dump_db())
         self.active_campaigns[campaign.campaign_id] = campaign
         self._stats["campaigns_created"] += 1
 
@@ -410,7 +410,7 @@ class CommunicationProcess(BaseProcess):
                 campaign_id=campaign.campaign_id,
             )
 
-            self.batch_writer.add("communication", communication.model_dump_db())
+            self.batch_writer.add("communication.communication", communication.model_dump_db())
             self._stats["marketing_sent"] += 1
 
             # Track for fatigue
@@ -471,7 +471,7 @@ class CommunicationProcess(BaseProcess):
         )
 
         # INSERT initial response
-        self.batch_writer.add("campaign_response", response.model_dump_db())
+        self.batch_writer.add("communication.campaign_response", response.model_dump_db())
 
         # Track in pending for lifecycle processing
         self.shared_state.add_pending_campaign_response(

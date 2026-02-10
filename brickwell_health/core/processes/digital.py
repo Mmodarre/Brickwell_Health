@@ -216,7 +216,7 @@ class DigitalBehaviorProcess(BaseProcess):
     ) -> None:
         """Write session and events to database."""
         # Write session
-        self.batch_writer.add("web_session", session.model_dump_db())
+        self.batch_writer.add("digital.web_session", session.model_dump_db())
         self._stats["sessions_created"] += 1
 
         # Track cancel page views
@@ -237,7 +237,7 @@ class DigitalBehaviorProcess(BaseProcess):
 
         # Write events
         for event in events:
-            self.batch_writer.add("digital_event", event.model_dump_db())
+            self.batch_writer.add("digital.digital_event", event.model_dump_db())
             self._stats["events_created"] += 1
 
     def _get_engagement_level(self, member_id: UUID) -> str:

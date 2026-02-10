@@ -5,7 +5,7 @@
 -- while maintaining referential integrity. Used when uncovered_claim_attempt_rate > 0.
 
 -- Placeholder product (required for FK constraints on placeholder policy/coverage)
-INSERT INTO product (
+INSERT INTO reference.product (
     product_id,
     product_code,
     product_name,
@@ -28,7 +28,7 @@ INSERT INTO product (
 ) ON CONFLICT (product_id) DO NOTHING;
 
 -- Placeholder policy (system record, not a real policy)
-INSERT INTO policy (
+INSERT INTO policy.policy (
     policy_id,
     policy_number,
     product_id,
@@ -57,7 +57,7 @@ INSERT INTO policy (
 ) ON CONFLICT (policy_id) DO NOTHING;
 
 -- Placeholder coverage for rejected claims
-INSERT INTO coverage (
+INSERT INTO policy.coverage (
     coverage_id,
     policy_id,
     coverage_type,

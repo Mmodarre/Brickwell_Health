@@ -614,7 +614,7 @@ class MemberLifecycleProcess(BaseProcess):
             created_at=self.sim_env.current_datetime,
             created_by="SIMULATION",
         )
-        self.batch_writer.add("member_update", update.model_dump_db())
+        self.batch_writer.add("member_lifecycle.member_update", update.model_dump_db())
 
     def _update_member_in_db(
         self,

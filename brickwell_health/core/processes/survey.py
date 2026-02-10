@@ -231,7 +231,7 @@ class SurveyProcess(BaseProcess):
         )
 
         # Write to database
-        self.batch_writer.add("nps_survey_pending", pending_survey.model_dump_db())
+        self.batch_writer.add("survey.nps_survey_pending", pending_survey.model_dump_db())
         self._stats["nps_pending_created"] += 1
 
         if pending_survey.will_respond:
@@ -311,7 +311,7 @@ class SurveyProcess(BaseProcess):
         )
 
         # Write to database
-        self.batch_writer.add("csat_survey_pending", pending_survey.model_dump_db())
+        self.batch_writer.add("survey.csat_survey_pending", pending_survey.model_dump_db())
         self._stats["csat_pending_created"] += 1
 
         if pending_survey.will_respond:
@@ -437,7 +437,7 @@ class SurveyProcess(BaseProcess):
         )
 
         # Write to database
-        self.batch_writer.add("nps_survey_pending", pending_survey.model_dump_db())
+        self.batch_writer.add("survey.nps_survey_pending", pending_survey.model_dump_db())
         self._stats["nps_pending_created"] += 1
         self._stats["journey_nps_created"] += 1
 
