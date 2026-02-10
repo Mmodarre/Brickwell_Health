@@ -20,10 +20,11 @@ CREATE SCHEMA IF NOT EXISTS digital;
 CREATE SCHEMA IF NOT EXISTS survey;
 CREATE SCHEMA IF NOT EXISTS nba;
 
--- Set database-level search path (fallback for ad-hoc queries)
+-- Set role-level search path (fallback for ad-hoc queries)
 -- This allows unqualified table references in debugging queries
 -- Production code should always use explicit schema qualification
-ALTER DATABASE brickwell_health
+-- Uses ALTER ROLE instead of ALTER DATABASE to avoid needing database ownership
+ALTER ROLE brickwell
 SET search_path TO policy, reference, regulatory, claims, billing, member_lifecycle,
                   crm, communication, digital, survey, nba, public;
 
