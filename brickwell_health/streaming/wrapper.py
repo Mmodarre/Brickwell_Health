@@ -78,49 +78,56 @@ class StreamingBatchWriter:
 
     # ---- Table name resolution ----
 
-    def _is_streaming_table(self, table_name: str) -> bool:
-        """Check if a table is configured for streaming.
+    def _resolve_streaming_name(self, table_name: str) -> str | None:
+        """Resolve a table name to its unqualified streaming name.
 
         Handles both qualified ("claims.ambulance_claim") and unqualified
         ("ambulance_claim") names against the configured unqualified set.
+
+        Returns the unqualified name if the table is configured for streaming,
+        or None if not. The returned name is used in event creation so the
+        topic resolver produces the correct topic.
         """
         if table_name in self._tables:
-            return True
+            return table_name
         # Strip schema prefix: "claims.ambulance_claim" → "ambulance_claim"
-        return table_name.split(".")[-1] in self._tables
+        short = table_name.split(".")[-1]
+        return short if short in self._tables else None
 
     # ---- BatchWriterProtocol methods ----
 
     def add(self, table_name: str, record: dict[str, Any]) -> None:
         self._inner.add(table_name, record)
-        if self._is_streaming_table(table_name) and not self._closed:
+        resolved = self._resolve_streaming_name(table_name)
+        if resolved is not None and not self._closed:
             event = create_event(
                 event_type="insert",
-                table=table_name,
+                table=resolved,
                 timestamp=self._get_sim_datetime(),
                 worker_id=self._worker_id,
                 data=record,
             )
             self._queue.put(event)
             self._stats["events_queued"] += 1
-        elif self._is_streaming_table(table_name) and self._closed:
+        elif resolved is not None and self._closed:
             self._stats["events_dropped_after_close"] += 1
 
     def add_many(self, table_name: str, records: list[dict[str, Any]]) -> None:
         self._inner.add_many(table_name, records)
-        if self._is_streaming_table(table_name) and not self._closed:
+        resolved = self._resolve_streaming_name(table_name)
+        if resolved is not None and not self._closed:
             ts = self._get_sim_datetime()
             for record in records:
                 event = create_event(
                     event_type="insert",
-                    table=table_name,
+                    table=resolved,
                     timestamp=ts,
                     worker_id=self._worker_id,
                     data=record,
                 )
                 self._queue.put(event)
                 self._stats["events_queued"] += 1
-        elif self._is_streaming_table(table_name) and self._closed:
+        elif resolved is not None and self._closed:
             self._stats["events_dropped_after_close"] += len(records)
 
     def add_raw_sql(self, operation_type: str, sql: str) -> None:
@@ -134,10 +141,11 @@ class StreamingBatchWriter:
         updates: dict[str, Any],
     ) -> bool:
         result = self._inner.update_record(table_name, key_field, key_value, updates)
-        if result and self._is_streaming_table(table_name) and not self._closed:
+        resolved = self._resolve_streaming_name(table_name)
+        if result and resolved is not None and not self._closed:
             event = create_event(
                 event_type="update",
-                table=table_name,
+                table=resolved,
                 timestamp=self._get_sim_datetime(),
                 worker_id=self._worker_id,
                 data=updates,
@@ -145,7 +153,7 @@ class StreamingBatchWriter:
             )
             self._queue.put(event)
             self._stats["events_queued"] += 1
-        elif result and self._is_streaming_table(table_name) and self._closed:
+        elif result and resolved is not None and self._closed:
             self._stats["events_dropped_after_close"] += 1
         return result
 
