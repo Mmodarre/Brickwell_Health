@@ -116,7 +116,7 @@ class SuspensionProcess(BaseProcess):
 
         while True:
             # Skip processing during warmup's first week
-            if self.sim_env.now < 7:
+            if self.sim_env.total_elapsed_days < 7:
                 yield self.env.timeout(1.0)
                 continue
 

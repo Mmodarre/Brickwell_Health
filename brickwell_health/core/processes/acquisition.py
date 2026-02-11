@@ -104,8 +104,9 @@ class AcquisitionProcess(BaseProcess):
         warmup_days = self.config.simulation.warmup_days
 
         while True:
-            # Calculate current rate
-            if self.sim_env.now < warmup_days:
+            # Calculate current rate (use total_elapsed_days to track
+            # warmup progress correctly across incremental runs)
+            if self.sim_env.total_elapsed_days < warmup_days:
                 daily_rate = self._calculate_warmup_rate()
             else:
                 daily_rate = self._calculate_steady_rate()

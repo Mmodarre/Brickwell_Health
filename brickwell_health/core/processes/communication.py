@@ -170,7 +170,7 @@ class CommunicationProcess(BaseProcess):
         )
 
         # Wait for warmup period
-        while self.sim_env.now < 30:
+        while self.sim_env.total_elapsed_days < 30:
             yield self.env.timeout(1.0)
 
         while True:

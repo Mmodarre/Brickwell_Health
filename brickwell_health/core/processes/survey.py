@@ -120,7 +120,7 @@ class SurveyProcess(BaseProcess):
     def run(self) -> Generator:
         """Main survey process loop."""
         # Wait for warmup (60 days for CRM events to exist)
-        while self.sim_env.now < 60:
+        while self.sim_env.total_elapsed_days < 60:
             yield self.env.timeout(1.0)
 
         while True:

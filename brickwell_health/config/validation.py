@@ -38,16 +38,20 @@ def validate_config(config: SimulationConfig) -> list[str]:
     warnings: list[str] = []
     errors: list[str] = []
 
-    # Check simulation duration is reasonable
+    # Check simulation duration is reasonable.
+    # This is a warning (not error) because incremental simulation runs
+    # may intentionally start with short durations and resume later.
     duration_days = (config.simulation.end_date - config.simulation.start_date).days
     if duration_days < config.simulation.warmup_days:
-        errors.append(
+        warnings.append(
             f"Simulation duration ({duration_days} days) is less than "
-            f"warmup period ({config.simulation.warmup_days} days)"
+            f"warmup period ({config.simulation.warmup_days} days). "
+            "Warmup will not complete in this run. Use --resume to "
+            "continue in subsequent runs."
         )
 
     analysis_days = duration_days - config.simulation.warmup_days
-    if analysis_days < 365:
+    if analysis_days < 365 and duration_days >= config.simulation.warmup_days:
         warnings.append(
             f"Analysis period after warmup is only {analysis_days} days. "
             "Consider extending end_date for more meaningful results."

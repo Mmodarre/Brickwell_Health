@@ -238,7 +238,7 @@ class ClaimsProcess(BaseProcess):
 
         while True:
             # Skip initial period (need waiting periods to complete)
-            if self.sim_env.now < 60:  # First 2 months
+            if self.sim_env.total_elapsed_days < 60:  # First 2 months
                 yield self.env.timeout(1.0)
                 continue
 

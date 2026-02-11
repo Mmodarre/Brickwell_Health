@@ -46,21 +46,26 @@ class SimulationEnvironment:
         end_date: date,
         rng: RNG,
         worker_id: int = 0,
+        elapsed_days_offset: int = 0,
     ):
         """
         Initialize the simulation environment.
 
         Args:
-            start_date: Simulation start date
+            start_date: Simulation start date (checkpoint date on resume)
             end_date: Simulation end date
             rng: NumPy random number generator
             worker_id: Worker process identifier (for logging/debugging)
+            elapsed_days_offset: Days already elapsed in prior runs before this
+                one. Used to correctly track warmup progress across incremental
+                simulation runs. On fresh runs this is 0.
         """
         self.env = simpy.Environment()
         self.start_date = start_date
         self.end_date = end_date
         self.rng = rng
         self.worker_id = worker_id
+        self.elapsed_days_offset = elapsed_days_offset
 
         # Calculate simulation duration in days
         self.duration_days = (end_date - start_date).days
@@ -71,12 +76,24 @@ class SimulationEnvironment:
             start_date=start_date.isoformat(),
             end_date=end_date.isoformat(),
             duration_days=self.duration_days,
+            elapsed_days_offset=elapsed_days_offset,
         )
 
     @property
     def now(self) -> float:
-        """Current simulation time in days from start."""
+        """Current simulation time in days from start of this run."""
         return self.env.now
+
+    @property
+    def total_elapsed_days(self) -> float:
+        """Total days elapsed since the very first simulation run started.
+
+        Accounts for days completed in prior runs (elapsed_days_offset)
+        plus days elapsed in the current run (env.now). Use this instead
+        of ``now`` for warmup/threshold checks that must be correct across
+        incremental simulation runs.
+        """
+        return self.elapsed_days_offset + self.env.now
 
     @property
     def current_date(self) -> date:
@@ -246,13 +263,16 @@ class SimulationEnvironment:
         """
         Check if warmup period is complete.
 
+        Uses total elapsed days (including prior runs) so that warmup
+        progress is tracked correctly across incremental simulation runs.
+
         Args:
             warmup_days: Number of warmup days
 
         Returns:
             True if warmup is complete
         """
-        return self.env.now >= warmup_days
+        return self.total_elapsed_days >= warmup_days
 
     def get_progress(self) -> float:
         """

@@ -169,7 +169,7 @@ class CRMProcess(BaseProcess):
         )
 
         # Wait for warmup period (claims need to be generated first)
-        while self.sim_env.now < 30:
+        while self.sim_env.total_elapsed_days < 30:
             yield self.env.timeout(1.0)
 
         while True:

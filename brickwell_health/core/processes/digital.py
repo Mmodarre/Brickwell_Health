@@ -103,7 +103,7 @@ class DigitalBehaviorProcess(BaseProcess):
     def run(self) -> Generator:
         """Main digital behavior process loop."""
         # Wait for warmup
-        while self.sim_env.now < 30:
+        while self.sim_env.total_elapsed_days < 30:
             yield self.env.timeout(1.0)
 
         while True:

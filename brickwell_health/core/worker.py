@@ -357,12 +357,16 @@ class SimulationWorker:
             self.id_generator.set_counters(**counters)
 
         # Create simulation environment starting from CHECKPOINT date
-        # This sidesteps SimPy's inability to set time directly
+        # This sidesteps SimPy's inability to set time directly.
+        # elapsed_days_offset tracks how many days were completed in prior
+        # runs so that warmup/threshold checks work across incremental runs.
+        elapsed_days_offset = (checkpoint_date - original_start_date).days
         self.sim_env = SimulationEnvironment(
             start_date=checkpoint_date,  # Resume from checkpoint date
             end_date=self.config.simulation.end_date,
             rng=self.rng,
             worker_id=self.worker_id,
+            elapsed_days_offset=elapsed_days_offset,
         )
 
         # Reconstruct SharedState from database (filtered by worker partition)
