@@ -108,6 +108,14 @@ class BatchWriter:
         # Buffer for raw SQL statements (executed after COPY operations)
         self._raw_sql_buffer: list[tuple[str, str]] = []
 
+        # Reverse lookup: unqualified table name → schema-qualified name
+        # e.g., "invoice" → "billing.invoice", "claim" → "claims.claim"
+        # Allows update_record/flush_for_cdc/is_in_buffer to accept either form.
+        self._table_aliases: dict[str, str] = {}
+        for fq_name in self.TABLE_FLUSH_ORDER:
+            short_name = fq_name.split(".")[-1]
+            self._table_aliases[short_name] = fq_name
+
     def add(self, table_name: str, record: dict[str, Any]) -> None:
         """
         Add a record to the batch buffer.
@@ -154,6 +162,24 @@ class BatchWriter:
         """
         self._raw_sql_buffer.append((operation_type, sql))
 
+    def _resolve_table_name(self, table_name: str) -> str:
+        """
+        Resolve an unqualified table name to its schema-qualified form.
+
+        Callers of update_record/flush_for_cdc/is_in_buffer may pass either
+        "invoice" or "billing.invoice". The buffer stores records under the
+        schema-qualified key used in add(). This method bridges the gap.
+
+        Args:
+            table_name: Qualified or unqualified table name
+
+        Returns:
+            Schema-qualified name if found, otherwise the original name
+        """
+        if table_name in self._buffers:
+            return table_name
+        return self._table_aliases.get(table_name, table_name)
+
     def update_record(
         self,
         table_name: str,
@@ -169,7 +195,7 @@ class BatchWriter:
         2. If the record was already flushed to DB, execute an UPDATE statement
 
         Args:
-            table_name: Name of the database table
+            table_name: Name of the database table (qualified or unqualified)
             key_field: Primary key field name (e.g., "invoice_id")
             key_value: Value of the primary key to match
             updates: Dictionary of field names to new values
@@ -177,6 +203,7 @@ class BatchWriter:
         Returns:
             True if record was found and updated, False otherwise
         """
+        table_name = self._resolve_table_name(table_name)
         # Normalize key_value for comparison (handle UUID, etc.)
         key_str = str(key_value)
 
@@ -206,13 +233,14 @@ class BatchWriter:
         updating a record to ensure the INSERT is captured separately.
 
         Args:
-            table_name: Name of the database table
+            table_name: Name of the database table (qualified or unqualified)
             key_field: Primary key field name
             key_value: Value of the primary key to match
 
         Returns:
             True if record is in buffer, False otherwise
         """
+        table_name = self._resolve_table_name(table_name)
         key_str = str(key_value)
         if table_name in self._buffers:
             for record in self._buffers[table_name]:
