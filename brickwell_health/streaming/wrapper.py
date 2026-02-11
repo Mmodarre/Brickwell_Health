@@ -76,11 +76,24 @@ class StreamingBatchWriter:
         """Delegate attribute access to the inner writer for attributes not on this wrapper."""
         return getattr(self._inner, name)
 
+    # ---- Table name resolution ----
+
+    def _is_streaming_table(self, table_name: str) -> bool:
+        """Check if a table is configured for streaming.
+
+        Handles both qualified ("claims.ambulance_claim") and unqualified
+        ("ambulance_claim") names against the configured unqualified set.
+        """
+        if table_name in self._tables:
+            return True
+        # Strip schema prefix: "claims.ambulance_claim" → "ambulance_claim"
+        return table_name.split(".")[-1] in self._tables
+
     # ---- BatchWriterProtocol methods ----
 
     def add(self, table_name: str, record: dict[str, Any]) -> None:
         self._inner.add(table_name, record)
-        if table_name in self._tables and not self._closed:
+        if self._is_streaming_table(table_name) and not self._closed:
             event = create_event(
                 event_type="insert",
                 table=table_name,
@@ -90,12 +103,12 @@ class StreamingBatchWriter:
             )
             self._queue.put(event)
             self._stats["events_queued"] += 1
-        elif table_name in self._tables and self._closed:
+        elif self._is_streaming_table(table_name) and self._closed:
             self._stats["events_dropped_after_close"] += 1
 
     def add_many(self, table_name: str, records: list[dict[str, Any]]) -> None:
         self._inner.add_many(table_name, records)
-        if table_name in self._tables and not self._closed:
+        if self._is_streaming_table(table_name) and not self._closed:
             ts = self._get_sim_datetime()
             for record in records:
                 event = create_event(
@@ -107,7 +120,7 @@ class StreamingBatchWriter:
                 )
                 self._queue.put(event)
                 self._stats["events_queued"] += 1
-        elif table_name in self._tables and self._closed:
+        elif self._is_streaming_table(table_name) and self._closed:
             self._stats["events_dropped_after_close"] += len(records)
 
     def add_raw_sql(self, operation_type: str, sql: str) -> None:
@@ -121,7 +134,7 @@ class StreamingBatchWriter:
         updates: dict[str, Any],
     ) -> bool:
         result = self._inner.update_record(table_name, key_field, key_value, updates)
-        if result and table_name in self._tables and not self._closed:
+        if result and self._is_streaming_table(table_name) and not self._closed:
             event = create_event(
                 event_type="update",
                 table=table_name,
@@ -132,7 +145,7 @@ class StreamingBatchWriter:
             )
             self._queue.put(event)
             self._stats["events_queued"] += 1
-        elif result and table_name in self._tables and self._closed:
+        elif result and self._is_streaming_table(table_name) and self._closed:
             self._stats["events_dropped_after_close"] += 1
         return result
 
