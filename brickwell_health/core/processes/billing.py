@@ -308,10 +308,7 @@ class BillingProcess(BaseProcess):
 
                 # Update invoice status in memory and in buffer/DB
                 self.billing_gen.mark_invoice_paid(invoice, payment)
-                self._update_invoice_status(invoice)
-
-                # Persist retry state before removing (for resume support)
-                self._update_invoice_retry_state(invoice_id, invoice_data)
+                self._update_invoice_paid(invoice, invoice_data)
 
                 # Remove from pending
                 del self.pending_invoices[invoice_id]
@@ -707,6 +704,49 @@ class BillingProcess(BaseProcess):
             policies_suspended_arrears=stats.get("policies_suspended_arrears", 0),
             policies_reinstated=stats.get("policies_reinstated", 0),
             policies_lapsed=stats.get("policies_lapsed", 0),
+        )
+
+    def _update_invoice_paid(self, invoice, invoice_data: dict) -> None:
+        """
+        Update invoice to paid status with retry state in a single DB operation.
+
+        Combines status update and retry state persistence to avoid producing
+        two separate UPDATE events (which causes spurious retry_attempt
+        increments on already-paid invoices in CDC/WAL streams).
+
+        Args:
+            invoice: Invoice with updated paid status
+            invoice_data: Invoice tracking dict with retry state
+        """
+        # Flush if invoice is still in buffer to ensure INSERT is committed for CDC
+        self.batch_writer.flush_for_cdc(
+            "invoice", "invoice_id", invoice.invoice_id
+        )
+
+        status = invoice.invoice_status
+        if hasattr(status, "value"):
+            status = status.value
+
+        self.batch_writer.update_record(
+            table_name="invoice",
+            key_field="invoice_id",
+            key_value=invoice.invoice_id,
+            updates={
+                "invoice_status": status,
+                "paid_amount": float(invoice.paid_amount)
+                if invoice.paid_amount
+                else 0,
+                "balance_due": float(invoice.balance_due)
+                if invoice.balance_due
+                else 0,
+                "retry_attempts": invoice_data.get("attempts", 0),
+                "next_retry_date": None,
+                "arrears_created": invoice_data.get(
+                    "arrears_created", False
+                ),
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
+            },
         )
 
     def _update_invoice_status(self, invoice) -> None:
