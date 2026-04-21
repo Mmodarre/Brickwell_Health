@@ -90,6 +90,15 @@ class BatchWriter:
         "nba.nba_action_catalog",
         "nba.nba_action_recommendation",
         "nba.nba_action_execution",
+        # Billing acquisition cost (depends on policy.policy)
+        "billing.acquisition_cost",
+        # IFRS 17 schema (post-simulation; cohort pre-populated, facts written
+        # by the IFRS17Engine after workers finish)
+        "ifrs17.cohort",
+        "ifrs17.monthly_balance",
+        "ifrs17.monthly_movement",
+        "ifrs17.onerous_assessment",
+        "ifrs17.journal_line",
     ]
 
     def __init__(self, engine: Engine, batch_size: int = 10000):

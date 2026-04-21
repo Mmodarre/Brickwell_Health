@@ -1,0 +1,48 @@
+# IFRS 17 / PAA Numerical Assumptions
+# ===================================
+# All parameters consumed by the post-simulation LRC engine.
+
+commission:
+  rates_by_channel:
+    Online: 0.015
+    Phone: 0.03
+    Broker: 0.12
+    Corporate: 0.02
+    Branch: 0.04
+    Comparison: 0.18
+  default_rate: 0.02
+  amortisation_months: 12
+
+risk_adjustment:
+  method: confidence_level
+  confidence_level: 0.75
+  ra_uplift_pct: 0.06
+
+ibnr:
+  method: rolling_lag
+  lookback_months: 3
+  lag_factor: 0.15
+
+earning_pattern:
+  method: straight_line
+  seasonal_weights: null
+
+onerous_detection:
+  combined_ratio_threshold: 1.00
+  hysteresis_band: 0.05
+  min_policies_for_assessment: 10
+  min_months_history: 3
+  # When the cohort has no claims history, assume target loss ratio for
+  # forward-looking expected claims estimation.
+  default_loss_ratio: 0.85
+  # Per-policy monthly admin expense (in AUD) used when estimating remaining
+  # expenses for the onerous assessment.
+  per_policy_monthly_admin: 5.00
+
+discounting:
+  enabled: false
+  rate: 0.035
+
+reporting:
+  portfolios: [HOSPITAL_ONLY, EXTRAS_ONLY, COMBINED, AMBULANCE_ONLY]
+  afy_start_month: 7

@@ -31,14 +31,16 @@ dependencies = [
     "faker>=22.0.0",
     "holidays>=0.40",
     "requests>=2.31.0",
-    "databricks-zerobus-ingest-sdk>=1.0.0",
     "structlog>=24.1.0",
     "tqdm>=4.66.1",
     "python-dateutil>=2.8.2",
     "databricks-sql-connector>=3.0.0",
 ]
 
-[project.optional-dependencies]
+[project.scripts]
+brickwell = "brickwell_health.cli:main"
+
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
@@ -51,9 +53,6 @@ dev = [
     "types-PyYAML>=6.0.12",
     "types-tqdm>=4.66.0",
 ]
-
-[project.scripts]
-brickwell = "brickwell_health.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

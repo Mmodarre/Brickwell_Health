@@ -1,5 +1,6 @@
 
 *.pyc
+.venv/
 .databricks/
 .vscode/
 scripts/
@@ -20,3 +21,5 @@ simulation_run.log
 .claude/
 .ruff_cache
 .mypy_cache
+
+.databricks

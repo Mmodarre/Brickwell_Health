@@ -48,6 +48,10 @@ class PolicyCreate(BaseModel):
     previous_fund_code: Optional[str] = None
     transfer_certificate_date: Optional[date] = None
 
+    # IFRS 17 / PAA cohort assignment (portfolio x AFY). Populated at policy
+    # creation time by the acquisition process via CohortMapper.
+    ifrs17_cohort_id: Optional[str] = Field(default=None, max_length=30)
+
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default="SIMULATION", max_length=50)
 

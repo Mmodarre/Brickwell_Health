@@ -34,6 +34,12 @@ SCHEMA_FILES = [
     "schema_digital.sql",       # web sessions, digital events (digital schema)
     "schema_survey.sql",        # NPS/CSAT surveys (survey schema)
     "schema_nba.sql",           # NBA action catalog, recommendations, executions (nba schema - depends on member, policy, communication, crm)
+    # IFRS 17 / PAA LRC accounting (depends on policy, billing)
+    "schema_ifrs17.sql",        # cohort, monthly_balance, monthly_movement, onerous_assessment + billing.acquisition_cost
+    # Finance dimensions + IFRS 17 journal lines (Phase 2)
+    # Runs AFTER schema_ifrs17.sql because ifrs17.journal_line FKs ifrs17.cohort,
+    # and attaches gl_period_id FK constraints to the 3 existing IFRS 17 facts.
+    "schema_finance.sql",
     # System records (must be last - inserts placeholder data)
     "schema_system.sql",        # System metadata (stays in public schema)
 ]
@@ -79,6 +85,16 @@ def init_database(
     # Add foreign key constraints from transactional tables to reference tables
     logger.info("adding_reference_foreign_key_constraints")
     _execute_reference_fk_constraints(engine)
+
+    # Extend reference.gl_period to cover the whole simulation window. The
+    # JSON seed only has 24 months; monthly IFRS 17 journal lines need an FK
+    # target for every reporting month, so we top up missing months here.
+    _extend_gl_periods(engine, config)
+
+    # Pre-populate IFRS 17 cohort dimension (portfolio x AFY) so that
+    # policy.policy.ifrs17_cohort_id FK targets exist before any policy row
+    # is inserted by the simulation.
+    _populate_ifrs17_cohorts(engine, config)
 
     if enable_cdc:
         _setup_cdc_slot(engine)
@@ -136,6 +152,166 @@ def _execute_reference_fk_constraints(engine) -> None:
             raise
 
 
+
+def _extend_gl_periods(engine, config) -> None:
+    """
+    Top up ``reference.gl_period`` with monthly rows that cover the simulation
+    window. The JSON seed is treated as the authoritative PeopleSoft snapshot;
+    this helper only inserts months that are not already present and tags them
+    with ``created_by='SIMULATION'`` so they can be identified later.
+
+    AU fiscal year convention: July = period 1, fiscal_year labels the FY in
+    which June falls (e.g. Jul 2024 - Jun 2025 is fiscal_year 2025).
+
+    Idempotent via ``INSERT ... ON CONFLICT (period_code) DO NOTHING``.
+    """
+    from calendar import monthrange
+    from datetime import date, timedelta
+
+    # Buffer the end date to align with the cohort pre-population so that any
+    # reporting month the engine emits has a matching gl_period row.
+    buffered_end = config.simulation.end_date + timedelta(days=400)
+
+    # Enumerate the first-of-month date for every month in the range.
+    cursor_date = date(config.simulation.start_date.year, config.simulation.start_date.month, 1)
+    months: list[tuple[date, date]] = []
+    while cursor_date <= buffered_end:
+        last_day = date(
+            cursor_date.year,
+            cursor_date.month,
+            monthrange(cursor_date.year, cursor_date.month)[1],
+        )
+        months.append((cursor_date, last_day))
+        # Advance to the first of the next month
+        if cursor_date.month == 12:
+            cursor_date = date(cursor_date.year + 1, 1, 1)
+        else:
+            cursor_date = date(cursor_date.year, cursor_date.month + 1, 1)
+
+    if not months:
+        logger.info("gl_period_extension_no_months")
+        return
+
+    # Resolve the next id to use for synthesised rows so we never collide with
+    # the seed data (which uses sequential ids 1..24).
+    with engine.connect() as conn:
+        max_id_row = conn.execute(
+            text("SELECT COALESCE(MAX(period_id), 0) FROM reference.gl_period")
+        ).fetchone()
+        next_id = int(max_id_row[0]) + 1
+
+        inserted = 0
+        for start_d, end_d in months:
+            period_code = f"{start_d.year:04d}-{start_d.month:02d}"
+            period_name = f"{start_d.strftime('%B')} {start_d.year}"
+            # AU fiscal year: Jul-Jun; FY label = year in which June falls.
+            if start_d.month >= 7:
+                fiscal_year = start_d.year + 1
+                period_number = start_d.month - 6  # Jul=1, Aug=2, ... Dec=6
+            else:
+                fiscal_year = start_d.year
+                period_number = start_d.month + 6  # Jan=7, Feb=8, ... Jun=12
+
+            result = conn.execute(
+                text(
+                    """
+                    INSERT INTO reference.gl_period
+                        (period_id, period_code, period_name, fiscal_year,
+                         period_number, start_date, end_date, status,
+                         closed_date, closed_by, created_by)
+                    VALUES
+                        (:period_id, :period_code, :period_name, :fiscal_year,
+                         :period_number, :start_date, :end_date, 'Open',
+                         NULL, NULL, 'SIMULATION')
+                    ON CONFLICT (period_code) DO NOTHING
+                    """
+                ),
+                {
+                    "period_id": next_id,
+                    "period_code": period_code,
+                    "period_name": period_name,
+                    "fiscal_year": fiscal_year,
+                    "period_number": period_number,
+                    "start_date": start_d,
+                    "end_date": end_d,
+                },
+            )
+            if result.rowcount:
+                inserted += 1
+                next_id += 1
+        conn.commit()
+
+    logger.info(
+        "gl_period_extended",
+        sim_start=str(config.simulation.start_date),
+        sim_end=str(config.simulation.end_date),
+        months_examined=len(months),
+        inserted=inserted,
+    )
+
+
+def _populate_ifrs17_cohorts(engine, config) -> None:
+    """
+    Pre-populate ``ifrs17.cohort`` with the full (portfolio x AFY) grid that
+    overlaps the simulation window.
+
+    We extend the enumerated range by one AFY past ``simulation.end_date`` so
+    that policies whose ``effective_date`` spills past the nominal sim end
+    (application + decision-time pipeline can push a handful of policies into
+    the next AFY) still resolve their FK to ``ifrs17.cohort``.
+
+    Idempotent via ``INSERT ... ON CONFLICT DO NOTHING`` — safe to re-run.
+    """
+    try:
+        from brickwell_health.ifrs17.cohort_mapper import CohortMapper
+    except Exception as e:  # pragma: no cover - import guard
+        logger.warning("ifrs17_cohort_mapper_unavailable", error=str(e))
+        return
+
+    reference_path = Path(config.reference_data_path)
+    mapper = CohortMapper.from_reference_path(reference_path)
+
+    # Buffer one extra AFY beyond the nominal end date.
+    from datetime import timedelta
+    buffered_end = config.simulation.end_date + timedelta(days=400)
+
+    rows = mapper.enumerate_cohorts(
+        config.simulation.start_date,
+        buffered_end,
+    )
+
+    if not rows:
+        logger.info("ifrs17_cohorts_no_rows")
+        return
+
+    with engine.connect() as conn:
+        try:
+            for cohort_id, portfolio, afy_label, afy_start, afy_end in rows:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO ifrs17.cohort
+                            (cohort_id, portfolio, afy_label, afy_start_date, afy_end_date)
+                        VALUES
+                            (:cohort_id, :portfolio, :afy_label, :afy_start, :afy_end)
+                        ON CONFLICT (cohort_id) DO NOTHING
+                        """
+                    ),
+                    {
+                        "cohort_id": cohort_id,
+                        "portfolio": portfolio,
+                        "afy_label": afy_label,
+                        "afy_start": afy_start,
+                        "afy_end": afy_end,
+                    },
+                )
+            conn.commit()
+            logger.info("ifrs17_cohorts_populated", count=len(rows))
+        except Exception as e:
+            logger.warning("ifrs17_cohort_populate_failed", error=str(e))
+            raise
+
+
 def _drop_all_tables(engine) -> None:
     """Drop all tables in reverse dependency order with schema qualification."""
     # First, drop ALL tables in public schema (CASCADE handles dependencies)
@@ -160,6 +336,13 @@ def _drop_all_tables(engine) -> None:
 
     # Then drop schema-qualified tables
     tables = [
+        # IFRS 17 Domain (fact tables first, dimension + acquisition cost last)
+        "ifrs17.journal_line",
+        "ifrs17.onerous_assessment",
+        "ifrs17.monthly_movement",
+        "ifrs17.monthly_balance",
+        "billing.acquisition_cost",
+        "ifrs17.cohort",
         # NBA Domain (depends on member, policy, communication, crm)
         "nba.nba_action_execution",
         "nba.nba_action_recommendation",
@@ -238,6 +421,11 @@ def _drop_all_tables(engine) -> None:
         "reference.campaign_type",
         "reference.survey_type",
         "reference.state_territory",
+        # Finance dimensions (Phase 2)
+        "reference.gl_account_hierarchy",
+        "reference.gl_account",
+        "reference.gl_period",
+        "reference.cost_centre",
     ]
 
     with engine.connect() as conn:

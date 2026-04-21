@@ -1287,6 +1287,9 @@ class SimulationConfig(BaseSettings):
     # Fraud claim generation
     fraud: FraudConfig = Field(default_factory=FraudConfig)
 
+    # IFRS 17 / PAA LRC post-simulation accounting
+    ifrs17: "IFRS17Config" = Field(default_factory=lambda: _default_ifrs17_config())
+
     reference_data_path: Path = Field(
         default=Path("data/reference"),
         description="Path to reference data JSON files",
@@ -1300,3 +1303,13 @@ class SimulationConfig(BaseSettings):
         "env_prefix": "BRICKWELL_",
         "env_nested_delimiter": "__",
     }
+
+
+def _default_ifrs17_config() -> "IFRS17Config":
+    from brickwell_health.config.ifrs17 import IFRS17Config
+    return IFRS17Config()
+
+
+# Resolve forward reference at import time
+from brickwell_health.config.ifrs17 import IFRS17Config  # noqa: E402
+SimulationConfig.model_rebuild()

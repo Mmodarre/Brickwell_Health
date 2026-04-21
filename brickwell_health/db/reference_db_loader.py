@@ -40,6 +40,13 @@ TABLE_LOAD_ORDER = [
     "campaign_type",             # No dependencies
     "survey_type",               # No dependencies
     "provider_location",         # FK to provider - must load after provider
+    # Finance dimensions (Phase 2 IFRS 17). Self-referential parent FKs are
+    # enforced only by simple INT columns (no DB-level FK constraint), so
+    # load order within the file is driven by id ordering in the JSON itself.
+    "gl_account",                # chart of accounts
+    "gl_account_hierarchy",      # denormalised hierarchy paths
+    "gl_period",                 # accounting periods (24 seed rows)
+    "cost_centre",               # cost centre dim
 ]
 
 
@@ -65,6 +72,10 @@ TABLE_JSON_MAPPING = {
     "campaign_type": "campaign_type.json",
     "survey_type": "survey_type.json",
     "provider_location": "provider_location.json",
+    "gl_account": "gl_account.json",
+    "gl_account_hierarchy": "gl_account_hierarchy.json",
+    "gl_period": "gl_period.json",
+    "cost_centre": "cost_centre.json",
 }
 
 

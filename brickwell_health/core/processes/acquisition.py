@@ -81,6 +81,31 @@ class AcquisitionProcess(BaseProcess):
             self.sim_env,
         )
 
+        # IFRS 17 / PAA wiring: build cohort mapper and commission generator
+        # when the engine is enabled. Lazy-imported so the rest of the
+        # simulator never pays import cost when IFRS 17 is off.
+        self.cohort_mapper = None
+        self.commission_gen = None
+        self.ifrs17_assumptions = None
+        if getattr(self.config, "ifrs17", None) is not None and self.config.ifrs17.enabled:
+            try:
+                from brickwell_health.ifrs17.cohort_mapper import CohortMapper
+                from brickwell_health.ifrs17.assumptions import load_assumptions
+                from brickwell_health.generators.commission_generator import CommissionGenerator
+
+                self.cohort_mapper = CohortMapper.from_reference_path(
+                    self.config.reference_data_path
+                )
+                self.ifrs17_assumptions = load_assumptions(
+                    str(self.config.ifrs17.assumptions_path)
+                )
+                self.commission_gen = CommissionGenerator(self.id_generator)
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning("ifrs17_acquisition_init_failed", error=str(e))
+                self.cohort_mapper = None
+                self.commission_gen = None
+                self.ifrs17_assumptions = None
+
         # Statistics
         self._applications_submitted = 0
         self._applications_approved = 0
@@ -282,9 +307,41 @@ class AcquisitionProcess(BaseProcess):
             members=members,
         )
 
+        # IFRS 17: assign cohort before writing so the row hits the DB with
+        # ifrs17_cohort_id already populated (avoids a follow-up UPDATE).
+        if self.cohort_mapper is not None:
+            try:
+                policy.ifrs17_cohort_id = self.cohort_mapper.cohort_id_for(
+                    policy.effective_date, policy.product_id
+                )
+            except Exception as e:
+                logger.warning(
+                    "ifrs17_cohort_assign_failed",
+                    policy_id=str(policy.policy_id),
+                    product_id=policy.product_id,
+                    error=str(e),
+                )
+
         self.batch_writer.add("policy.policy", policy.model_dump_db())
         for pm in policy_members:
             self.batch_writer.add("policy.policy_member", pm.model_dump_db())
+
+        # IFRS 17: emit commission / acquisition cost rows after the policy
+        # row so the FK to policy.policy always resolves during flush.
+        if self.commission_gen is not None and self.ifrs17_assumptions is not None:
+            try:
+                for cost in self.commission_gen.generate_for_policy(
+                    policy, self.ifrs17_assumptions
+                ):
+                    self.batch_writer.add(
+                        "billing.acquisition_cost", cost.model_dump_db()
+                    )
+            except Exception as e:
+                logger.warning(
+                    "ifrs17_commission_emit_failed",
+                    policy_id=str(policy.policy_id),
+                    error=str(e),
+                )
 
         self._policies_created += 1
         self.increment_stat("policies_created")

@@ -16,7 +16,7 @@ holidays>=0.40
 
 # HTTP client (for streaming backends)
 requests>=2.31.0
-databricks-zerobus-ingest-sdk>=1.0.0
+# databricks-zerobus-ingest-sdk>=1.0.0
 
 # Utilities
 structlog>=24.1.0

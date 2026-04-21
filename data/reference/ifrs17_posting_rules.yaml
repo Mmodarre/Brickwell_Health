@@ -1,0 +1,40 @@
+# IFRS 17 posting rules: movement bucket -> (debit account, credit account)
+#
+# Each rule emits ONE debit row + ONE credit row per (cohort, reporting_month)
+# when the corresponding movement amount is non-zero. Account codes must exist
+# in reference.gl_account (chart of accounts seeded from gl_account.json).
+#
+# Accountant-owned file: edit directly to retarget bucket -> account mappings
+# without touching engine code. The engine validates every account_code at
+# startup and aborts if any reference is unresolved.
+
+posting_rules:
+  - bucket: insurance_revenue          # LRC released as earned premium
+    debit_account_code:  "2130-01"     # Unearned Premium Revenue (liability decrease)
+    credit_account_code: "4100-01"     # Premium Revenue - Hospital
+    description: "Earned premium recognised from LRC"
+
+  - bucket: premiums_received          # Cash in the door; grows LRC
+    debit_account_code:  "1100-03"     # Cash at Bank - Claims Payment (asset up)
+    credit_account_code: "2130-01"     # Unearned Premium Revenue (liability up)
+    description: "Cash received; adds to LRC"
+
+  - bucket: claims_incurred            # Service date hits
+    debit_account_code:  "5200-01"     # Medical Services Claims - In Hospital (expense)
+    credit_account_code: "2140-01"     # Outstanding Claims Provision (LIC)
+    description: "Claim incurred; LIC best estimate increases"
+
+  - bucket: dac_amortised              # DAC expense (best-fit: Dental Claims - General as proxy)
+    debit_account_code:  "5300-01"     # Dental Claims - General (best-fit DAC expense proxy)
+    credit_account_code: "2300-01"     # Provision for Outstanding Claims (best-fit DAC liability proxy)
+    description: "Deferred acquisition cost amortised to P&L (best-fit accounts)"
+
+  - bucket: loss_component_recognised  # Onerous: expected losses accrue
+    debit_account_code:  "5300-08"     # Other Extras Claims (best-fit LC expense proxy)
+    credit_account_code: "2300-02"     # Provision for IBNR Claims (best-fit LC liability proxy)
+    description: "Onerous loss component recognised (best-fit accounts)"
+
+  - bucket: loss_component_reversed    # Onerous: expected profitability improves
+    debit_account_code:  "2300-02"     # Provision for IBNR Claims (LC liability decrease)
+    credit_account_code: "5300-08"     # Other Extras Claims (LC expense reversal)
+    description: "Loss component reversed as expected profitability improves"

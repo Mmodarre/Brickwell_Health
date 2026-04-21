@@ -111,6 +111,9 @@ class ParallelRunner:
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
 
+        # IFRS 17 / PAA LRC post-simulation accounting
+        self._run_ifrs17_lrc()
+
         # Process pending surveys with LLM (if enabled)
         self._process_llm_surveys()
 
@@ -170,6 +173,9 @@ class ParallelRunner:
 
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
+
+        # IFRS 17 / PAA LRC post-simulation accounting
+        self._run_ifrs17_lrc()
 
         # Process pending surveys with LLM (if enabled)
         self._process_llm_surveys()
@@ -465,6 +471,55 @@ class ParallelRunner:
                 error=str(e),
                 exc_info=True,
             )
+
+
+    def _run_ifrs17_lrc(self) -> None:
+        """
+        Run the IFRS 17 / PAA LRC engine against the simulated data.
+
+        Mirrors ``_enrich_survey_contexts()``: uses a fresh engine, wraps
+        everything in try/except so a failure here never kills the run.
+        Skipped entirely when ``config.ifrs17.enabled`` is false.
+        """
+        ifrs17_cfg = getattr(self.config, "ifrs17", None)
+        if ifrs17_cfg is None or not ifrs17_cfg.enabled:
+            logger.info("ifrs17_engine_skipped_disabled")
+            return
+
+        logger.info("ifrs17_engine_starting_post_sim")
+        try:
+            from brickwell_health.ifrs17.engine import IFRS17Engine
+            from brickwell_health.ifrs17.assumptions import load_assumptions
+            from brickwell_health.ifrs17 import export as ifrs17_export
+
+            engine = create_engine_from_config(self.config.database)
+            assumptions = load_assumptions(str(ifrs17_cfg.assumptions_path))
+
+            ifrs_engine = IFRS17Engine(
+                config=ifrs17_cfg,
+                db_engine=engine,
+                sim_start=self.config.simulation.start_date,
+                sim_end=self.config.simulation.end_date,
+                assumptions=assumptions,
+            )
+            counts = ifrs_engine.run()
+            logger.info("ifrs17_engine_completed", **counts)
+
+            if ifrs17_cfg.csv_export_enabled:
+                try:
+                    run_id = time.strftime("%Y%m%d_%H%M%S")
+                    written = ifrs17_export.export_all(
+                        db_engine=engine,
+                        out_dir=Path(ifrs17_cfg.csv_export_dir),
+                        run_id=run_id,
+                        mode=ifrs17_cfg.csv_export_mode,
+                    )
+                    logger.info("ifrs17_csv_exported", files=written)
+                except Exception as ee:
+                    logger.warning("ifrs17_csv_export_failed", error=str(ee))
+
+        except Exception as e:
+            logger.warning("ifrs17_engine_failed", error=str(e))
             # Don't raise - enrichment failure shouldn't fail the simulation
 
     def _process_llm_surveys(self) -> None:
