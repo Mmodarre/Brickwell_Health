@@ -291,6 +291,25 @@ class FraudGenerator(BaseGenerator[ClaimCreate]):
             "claim_channel": source_claim.get("claim_channel", "Online"),
         }
 
+    def perturb_amount(
+        self,
+        base: Decimal,
+        std_pct: float,
+    ) -> Decimal:
+        """Return ``base`` perturbed by a uniform ±``std_pct`` factor.
+
+        Used by near-duplicate line mirroring so each line has an
+        independent small amount variation (rather than all lines sharing
+        the same multiplier).
+        """
+        if base is None:
+            return Decimal("0")
+        if std_pct <= 0:
+            return Decimal(str(base))
+        factor = float(self.rng.uniform(-std_pct, std_pct))
+        result = Decimal(str(base)) * Decimal(str(1 + factor))
+        return result.quantize(Decimal("0.01"))
+
     def apply_phantom_billing(
         self,
         claim: ClaimCreate,

@@ -19,6 +19,7 @@ CREATE SCHEMA IF NOT EXISTS communication;
 CREATE SCHEMA IF NOT EXISTS digital;
 CREATE SCHEMA IF NOT EXISTS survey;
 CREATE SCHEMA IF NOT EXISTS nba;
+CREATE SCHEMA IF NOT EXISTS finance;
 
 -- Set role-level search path (fallback for ad-hoc queries)
 -- This allows unqualified table references in debugging queries
@@ -26,7 +27,7 @@ CREATE SCHEMA IF NOT EXISTS nba;
 -- Uses ALTER ROLE instead of ALTER DATABASE to avoid needing database ownership
 ALTER ROLE brickwell
 SET search_path TO policy, reference, regulatory, claims, billing, member_lifecycle,
-                  crm, communication, digital, survey, nba, public;
+                  crm, communication, digital, survey, nba, finance, public;
 
 -- Schema documentation
 COMMENT ON SCHEMA reference IS 'Master data: products, providers, benefits, reference codes';
@@ -40,3 +41,4 @@ COMMENT ON SCHEMA communication IS 'Marketing and messaging: campaigns, communic
 COMMENT ON SCHEMA digital IS 'Digital behavior: web sessions, digital events, intent signals';
 COMMENT ON SCHEMA survey IS 'Feedback: NPS/CSAT surveys with LLM context for post-processing';
 COMMENT ON SCHEMA nba IS 'Next Best Action: catalog, recommendations, executions with behavioral effects';
+COMMENT ON SCHEMA finance IS 'Fund-level management expense journal lines';

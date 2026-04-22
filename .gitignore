@@ -23,3 +23,6 @@ simulation_run.log
 .mypy_cache
 
 .databricks
+data/output/
+config/pass
+*/.DS_Store

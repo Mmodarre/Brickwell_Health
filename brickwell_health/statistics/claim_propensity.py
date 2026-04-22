@@ -546,3 +546,172 @@ class ClaimPropensityModel:
 
         # Poisson probability of at least one event
         return self.rng.random() < (1 - np.exp(-expected))
+
+    # -------------------------------------------------------------------
+    # Multi-line visit composition (HICAPS-realistic line emission)
+    # -------------------------------------------------------------------
+    # Service-type → category grouping for line composition config.
+    # Dental and Optical have explicit archetypes; others fall into
+    # "physio_like", "psychology_like", or "other_extras" buckets keyed
+    # directly on item_count config (no archetype layer).
+    _EXTRAS_LINE_CATEGORY_MAP: dict[str, str] = {
+        "Dental": "dental",
+        "Optical": "optical",
+        "Physiotherapy": "physio_like",
+        "Chiropractic": "physio_like",
+        "Osteopathy": "physio_like",
+        "Myotherapy": "physio_like",
+        "Podiatry": "physio_like",
+        "Psychology": "psychology_like",
+        "Speech Pathology": "psychology_like",
+        "Dietetics": "psychology_like",
+        "Occupational Therapy": "psychology_like",
+        "Acupuncture": "other_extras",
+        "Massage": "other_extras",
+        "Natural Therapies": "other_extras",
+        "Hearing": "other_extras",
+        "Exercise Physiology": "other_extras",
+    }
+
+    def _get_line_category(self, service_type: str) -> str:
+        """Return the line-composition category key for a service type."""
+        return self._EXTRAS_LINE_CATEGORY_MAP.get(service_type, "other_extras")
+
+    def sample_extras_visit_archetype(
+        self,
+        service_type: str,
+    ) -> str | None:
+        """
+        Sample a visit archetype for the given service type.
+
+        Only Dental and Optical have archetype layers; other service types
+        return ``None`` (their item count is drawn directly).
+
+        Args:
+            service_type: Service type name (e.g. "Dental", "Optical")
+
+        Returns:
+            Archetype name ("preventative", "restorative", "major", "standard",
+            "bundle"), or None for service types without archetypes.
+        """
+        category = self._get_line_category(service_type)
+        comp = self.config.line_composition
+        if category == "dental":
+            arch_cfg = comp.dental
+        elif category == "optical":
+            arch_cfg = comp.optical
+        else:
+            return None
+
+        names = list(arch_cfg.archetype_weights.keys())
+        weights = list(arch_cfg.archetype_weights.values())
+        total = float(sum(weights)) or 1.0
+        probs = [w / total for w in weights]
+        idx = int(self.rng.choice(len(names), p=probs))
+        return names[idx]
+
+    def _draw_item_count(self, cfg: Any) -> int:
+        """Draw a line-item count from a LineItemCountConfig."""
+        lo = int(cfg.min)
+        hi = int(cfg.max)
+        if cfg.fixed is not None:
+            return max(lo, min(hi, int(cfg.fixed)))
+        if cfg.probs:
+            counts = list(cfg.probs.keys())
+            weights = list(cfg.probs.values())
+            total = float(sum(weights)) or 1.0
+            probs = [w / total for w in weights]
+            idx = int(self.rng.choice(len(counts), p=probs))
+            return max(lo, min(hi, int(counts[idx])))
+        lam = float(cfg.lambda_ or 1.0)
+        # Draw from Poisson, clamp to [min, max]. Re-draw a bounded number of
+        # times to reduce clamp bias; fall back to mean rounded to range.
+        for _ in range(8):
+            n = int(self.rng.poisson(lam))
+            if lo <= n <= hi:
+                return n
+        return max(lo, min(hi, int(round(lam))))
+
+    def sample_extras_line_composition(
+        self,
+        service_type: str,
+        archetype: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Sample an ordered list of line-item descriptors for a visit.
+
+        Each descriptor is a dict:
+            {
+                "sub_type": "preventative" | "restorative" | "major" | None,
+                "is_checkup": bool,     # first item of a dental visit when
+                                        #   always_include_checkup is True
+            }
+
+        Dental sub-types drive both item-code selection (via
+        :meth:`ClaimsGenerator._select_extras_item`) and cost sampling
+        (via :meth:`sample_dental_claim_amount`).
+
+        Args:
+            service_type: Service type name.
+            archetype: Optional archetype name (if already sampled).
+
+        Returns:
+            Ordered list of item descriptors, length >= 1.
+        """
+        category = self._get_line_category(service_type)
+        comp = self.config.line_composition
+
+        if category == "dental":
+            arch = archetype or self.sample_extras_visit_archetype(service_type)
+            item_cfg = comp.dental.item_count.get(
+                arch, comp.dental.item_count.get("preventative")
+            )
+            n = self._draw_item_count(item_cfg)
+            items: list[dict[str, Any]] = []
+            # Dental sub-type per archetype (mostly single sub-type; Major
+            # allows occasional General mixed in per the plan)
+            sub_type_draw = {
+                "preventative": [("preventative", 1.0)],
+                "restorative": [("general", 1.0)],
+                "major": [("major", 0.8), ("general", 0.2)],
+            }.get(arch, [("preventative", 1.0)])
+            sub_names = [s[0] for s in sub_type_draw]
+            sub_probs = [s[1] for s in sub_type_draw]
+            total = float(sum(sub_probs)) or 1.0
+            sub_probs = [p / total for p in sub_probs]
+
+            always_checkup = bool(getattr(item_cfg, "always_include_checkup", False))
+            for i in range(n):
+                if i == 0 and always_checkup:
+                    items.append({
+                        "sub_type": "preventative",
+                        "is_checkup": True,
+                        "archetype": arch,
+                    })
+                else:
+                    idx = int(self.rng.choice(len(sub_names), p=sub_probs))
+                    items.append({
+                        "sub_type": sub_names[idx],
+                        "is_checkup": False,
+                        "archetype": arch,
+                    })
+            return items
+
+        if category == "optical":
+            arch = archetype or self.sample_extras_visit_archetype(service_type)
+            item_cfg = comp.optical.item_count.get(
+                arch, comp.optical.item_count.get("standard")
+            )
+            n = self._draw_item_count(item_cfg)
+            return [
+                {"sub_type": None, "is_checkup": False, "archetype": arch}
+                for _ in range(n)
+            ]
+
+        # Non-archetype categories (physio_like, psychology_like, other_extras)
+        item_cfg = getattr(comp, category)
+        n = self._draw_item_count(item_cfg)
+        return [
+            {"sub_type": None, "is_checkup": False, "archetype": None}
+            for _ in range(n)
+        ]

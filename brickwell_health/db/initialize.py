@@ -40,6 +40,8 @@ SCHEMA_FILES = [
     # Runs AFTER schema_ifrs17.sql because ifrs17.journal_line FKs ifrs17.cohort,
     # and attaches gl_period_id FK constraints to the 3 existing IFRS 17 facts.
     "schema_finance.sql",
+    # Management expense journal lines (depends on reference.gl_period, gl_account, cost_centre)
+    "schema_management_expense.sql",
     # System records (must be last - inserts placeholder data)
     "schema_system.sql",        # System metadata (stays in public schema)
 ]
@@ -336,6 +338,8 @@ def _drop_all_tables(engine) -> None:
 
     # Then drop schema-qualified tables
     tables = [
+        # Finance Domain (management expense journal lines)
+        "finance.journal_line",
         # IFRS 17 Domain (fact tables first, dimension + acquisition cost last)
         "ifrs17.journal_line",
         "ifrs17.onerous_assessment",

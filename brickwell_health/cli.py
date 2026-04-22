@@ -47,6 +47,43 @@ def main(ctx, config, verbose, json_logs):
     ctx.obj["log_level"] = log_level
 
 
+def _warn_on_stranded_claims(config) -> None:
+    """Emit a warning if any claims finished the simulation in a non-terminal state.
+
+    Terminal states are Paid and Rejected. Anything still Submitted, Assessed,
+    or Approved indicates a drain failure in ClaimsProcess.finalize(). This is
+    logged and printed as a warning; it does not raise, so a successful run is
+    not lost over a minor leak.
+    """
+    try:
+        from sqlalchemy import text
+        from brickwell_health.db.connection import create_engine_from_config
+
+        engine = create_engine_from_config(config.database)
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT claim_status, COUNT(*) AS n "
+                    "FROM claims.claim "
+                    "WHERE claim_status IN ('Submitted','Assessed','Approved') "
+                    "GROUP BY claim_status"
+                )
+            ).fetchall()
+        engine.dispose()
+    except Exception as exc:
+        logger.warning("stranded_claims_check_failed", error=str(exc))
+        return
+
+    if not rows:
+        return
+
+    total = sum(int(r[1]) for r in rows)
+    breakdown = ", ".join(f"{status}={count}" for status, count in rows)
+    message = f"Stranded non-terminal claims detected: {total} ({breakdown})"
+    click.echo(f"Warning: {message}", err=True)
+    logger.warning("stranded_claims_detected", total=total, breakdown=dict(rows))
+
+
 @main.command()
 @click.option(
     "--workers", "-w",
@@ -178,6 +215,8 @@ def run(ctx, workers, sequential, resume, extend_days, end_date):
         for table, count in sorted(results['database_writes'].items()):
             if count > 0:
                 click.echo(f"  {table}: {count:,}")
+
+        _warn_on_stranded_claims(config)
 
     except CheckpointNotFoundError as e:
         click.echo(f"Checkpoint error: {e}", err=True)

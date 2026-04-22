@@ -293,6 +293,11 @@ class SimulationWorker:
         # Run simulation
         self.sim_env.run()
 
+        # Drain any pending state held by processes (e.g., claims stuck in
+        # SUBMITTED/ASSESSED when the clock ran out). Must run before the
+        # final flush so drained writes are committed with the rest.
+        self._finalize_processes()
+
         # Flush remaining data
         self.batch_writer.flush_all()
 
@@ -392,6 +397,9 @@ class SimulationWorker:
         # Run simulation from checkpoint to end
         self.sim_env.run()
 
+        # Drain any pending state held by processes before final flush.
+        self._finalize_processes()
+
         # Flush remaining data
         self.batch_writer.flush_all()
 
@@ -422,6 +430,40 @@ class SimulationWorker:
             self.survey.start()
         if self.nba_process:
             self.nba_process.start()
+
+    def _finalize_processes(self) -> None:
+        """Invoke finalize() on each process that defines one.
+
+        Called after the SimPy env has finished running but before the
+        final batch_writer flush, so that processes can drain any
+        remaining in-memory state into the batch buffers.
+        """
+        candidates = [
+            self.acquisition,
+            self.lifecycle,
+            self.member_lifecycle,
+            self.suspension,
+            self.claims,
+            self.billing,
+            self.crm,
+            self.communication,
+            self.digital,
+            self.survey,
+            self.nba_process,
+        ]
+        for proc in candidates:
+            if proc is None:
+                continue
+            finalize = getattr(proc, "finalize", None)
+            if callable(finalize):
+                try:
+                    finalize()
+                except Exception:
+                    logger.exception(
+                        "process_finalize_failed",
+                        worker_id=self.worker_id,
+                        process=type(proc).__name__,
+                    )
 
     def _restore_process_state(self, checkpoint: dict[str, Any]) -> None:
         """

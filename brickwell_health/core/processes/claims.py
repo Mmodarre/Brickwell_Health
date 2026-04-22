@@ -394,8 +394,8 @@ class ClaimsProcess(BaseProcess):
         # Step 3: Stochastic approval check - determines outcome but doesn't reject yet
         approved, denial_reason = self._should_approve_claim(ClaimType.EXTRAS)
 
-        # Step 4: Generate claim as SUBMITTED (both approved and stochastic rejected)
-        claim, claim_line, extras_claim = self.claims_gen.generate_extras_claim(
+        # Step 4: Generate multi-line claim as SUBMITTED
+        claim, claim_lines, extras_claims = self.claims_gen.generate_extras_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
             coverage=member_data.get("extras_coverage"),
@@ -410,10 +410,14 @@ class ClaimsProcess(BaseProcess):
                 fraud_type_applied = self.fraud_gen.select_fraud_type(ClaimType.EXTRAS)
 
                 if fraud_type_applied == FraudType.UNBUNDLING:
+                    # Unbundling fragments the claim into multiple 1-line claims;
+                    # pass only the first line + extras_claim for downstream detail.
+                    first_line = claim_lines[0] if claim_lines else None
+                    first_extras = extras_claims[0] if extras_claims else None
                     n_frags = self._write_unbundled_claims(
-                        claim, claim_line, member_data, service_date,
+                        claim, first_line, member_data, service_date,
                         approved, denial_reason,
-                        extras_claim=extras_claim,
+                        extras_claim=first_extras,
                     )
                     self.increment_stat("extras_claims")
                     self.increment_stat("fraud_claims", n_frags)
@@ -422,37 +426,73 @@ class ClaimsProcess(BaseProcess):
                 if fraud_type_applied not in (
                     FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
                 ):
-                    # Inline fraud: modify claim in place
+                    # Inline fraud: modify claim header in place, then redistribute
+                    # the charge/benefit delta pro-rata across all lines so the
+                    # header = sum(lines) invariant holds.
                     fraud_fields = self._get_inline_fraud_fields(
                         claim, fraud_type_applied, member_data,
                     )
+                    original_total_charge = claim.total_charge
+                    original_total_benefit = claim.total_benefit
                     for key, value in fraud_fields.items():
                         object.__setattr__(claim, key, value)
-                    # Keep charge/benefit consistent across related records
-                    if "total_charge" in fraud_fields:
-                        object.__setattr__(
-                            claim_line, "charge_amount", fraud_fields["total_charge"],
+
+                    # Redistribute modified totals pro-rata across lines
+                    new_charge = fraud_fields.get("total_charge", original_total_charge)
+                    new_benefit = fraud_fields.get("total_benefit", original_total_benefit)
+                    if claim_lines and original_total_charge > 0:
+                        charge_ratio = Decimal(str(new_charge)) / original_total_charge
+                    else:
+                        charge_ratio = Decimal("1")
+                    if claim_lines and (original_total_benefit or Decimal("0")) > 0:
+                        benefit_ratio = Decimal(str(new_benefit)) / original_total_benefit
+                    else:
+                        benefit_ratio = Decimal("1")
+                    for cl, ec in zip(claim_lines, extras_claims):
+                        new_line_charge = (cl.charge_amount * charge_ratio).quantize(
+                            Decimal("0.01")
                         )
-                        object.__setattr__(
-                            extras_claim, "charge_amount", fraud_fields["total_charge"],
-                        )
-                    if fraud_fields.get("total_benefit") is not None:
-                        object.__setattr__(
-                            claim_line, "benefit_amount", fraud_fields["total_benefit"],
-                        )
-                        object.__setattr__(
-                            extras_claim, "benefit_amount", fraud_fields["total_benefit"],
-                        )
+                        new_line_benefit = (
+                            (cl.benefit_amount or Decimal("0")) * benefit_ratio
+                        ).quantize(Decimal("0.01"))
+                        new_line_gap = new_line_charge - new_line_benefit
+                        object.__setattr__(cl, "charge_amount", new_line_charge)
+                        object.__setattr__(cl, "benefit_amount", new_line_benefit)
+                        object.__setattr__(cl, "gap_amount", new_line_gap)
+                        object.__setattr__(ec, "charge_amount", new_line_charge)
+                        object.__setattr__(ec, "benefit_amount", new_line_benefit)
+                        object.__setattr__(ec, "annual_limit_impact", new_line_benefit)
+
+                    # Re-sum header from mirrored lines so header = Σ lines
+                    # (fraud_fields doesn't carry total_gap).
+                    new_total_charge = sum(
+                        (cl.charge_amount for cl in claim_lines), Decimal("0"),
+                    )
+                    new_total_benefit = sum(
+                        (cl.benefit_amount or Decimal("0") for cl in claim_lines),
+                        Decimal("0"),
+                    )
+                    new_total_gap = sum(
+                        (cl.gap_amount or Decimal("0") for cl in claim_lines),
+                        Decimal("0"),
+                    )
+                    object.__setattr__(claim, "total_charge", new_total_charge)
+                    object.__setattr__(claim, "total_benefit", new_total_benefit)
+                    object.__setattr__(claim, "total_gap", new_total_gap)
 
         # Step 5: Calculate benefit capping (for audit trail - applied during ASSESSED)
         # Re-fetch remaining limit using actual claim line category (may differ)
+        # Use first line's benefit_category_id as representative (all lines share it for extras)
+        rep_benefit_category_id = (
+            claim_lines[0].benefit_category_id if claim_lines else None
+        )
         remaining_limit = self._get_remaining_limit(
             member_data,
-            claim_line.benefit_category_id,
+            rep_benefit_category_id,
             benefit_year,
         )
 
-        # Store original amounts for SUBMITTED state
+        # Store original (uncapped) amounts for SUBMITTED state
         original_benefit = claim.total_benefit
         original_gap = claim.total_gap
 
@@ -463,28 +503,43 @@ class ClaimsProcess(BaseProcess):
             capped_benefit = min(original_benefit, remaining_limit)
             additional_gap = original_benefit - capped_benefit
 
-        # Write claim as SUBMITTED with ORIGINAL uncapped amounts (audit trail)
+        # Write claim + all lines + all extras_claim rows as SUBMITTED
         self.batch_writer.add("claims.claim", claim.model_dump_db())
-        self.batch_writer.add("claims.claim_line", claim_line.model_dump())
-        self.batch_writer.add("claims.extras_claim", extras_claim.model_dump_db())
+        for cl in claim_lines:
+            self.batch_writer.add("claims.claim_line", cl.model_dump())
+        for ec in extras_claims:
+            self.batch_writer.add("claims.extras_claim", ec.model_dump_db())
 
         # Step 6: Schedule lifecycle transitions (benefit usage recorded when PAID)
-        # Store capping info for application during ASSESSED transition
         self._schedule_claim_transitions(
             claim=claim,
-            claim_line_ids=[claim_line.claim_line_id],
+            claim_line_ids=[cl.claim_line_id for cl in claim_lines],
             member_data=member_data,
             lodgement_date=service_date,
             approved=approved,
             denial_reason=denial_reason if not approved else None,
-            benefit_category_id=claim_line.benefit_category_id,
+            benefit_category_id=rep_benefit_category_id,
             benefit_amount=capped_benefit if capped_benefit is not None else original_benefit,
             # Additional capping info for ASSESSED transition (audit trail)
             capped_benefit=capped_benefit,
             additional_gap=additional_gap,
             original_benefit=original_benefit,
             original_gap=original_gap,
-            extras_claim_id=extras_claim.extras_claim_id,
+            # For multi-line cap-from-end, thread all extras_claim_ids
+            extras_claim_ids=[ec.extras_claim_id for ec in extras_claims],
+            # Keep legacy key for single-line compatibility (first extras_claim)
+            extras_claim_id=(
+                extras_claims[0].extras_claim_id if extras_claims else None
+            ),
+            # Per-line snapshot for cap-from-end benefit capping during ASSESSED
+            line_snapshots=[
+                {
+                    "claim_line_id": cl.claim_line_id,
+                    "benefit_amount": cl.benefit_amount,
+                    "charge_amount": cl.charge_amount,
+                }
+                for cl in claim_lines
+            ],
         )
 
         self.increment_stat("extras_claims")
@@ -496,6 +551,7 @@ class ClaimsProcess(BaseProcess):
             ):
                 self._generate_duplicate_claim(
                     claim, member_data, fraud_type_applied, service_date,
+                    source_lines=claim_lines,
                 )
             self.increment_stat("fraud_claims")
 
@@ -504,7 +560,7 @@ class ClaimsProcess(BaseProcess):
             if not fraud_type_applied or fraud_type_applied in (
                 FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
             ):
-                self._add_to_duplication_pool(claim, member_data)
+                self._add_to_duplication_pool(claim, member_data, source_lines=claim_lines)
 
     def _generate_hospital_claim(
         self,
@@ -571,12 +627,56 @@ class ClaimsProcess(BaseProcess):
                 if fraud_type_applied not in (
                     FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
                 ):
-                    # Inline fraud: modify claim header
+                    # Inline fraud: modify claim header. Distribute the delta
+                    # pro-rata across lines to preserve the header = sum(lines)
+                    # invariant.
                     fraud_fields = self._get_inline_fraud_fields(
                         claim, fraud_type_applied, member_data,
                     )
+                    original_total_charge = claim.total_charge
+                    original_total_benefit = claim.total_benefit
                     for key, value in fraud_fields.items():
                         object.__setattr__(claim, key, value)
+
+                    new_charge = fraud_fields.get("total_charge", original_total_charge)
+                    new_benefit = fraud_fields.get("total_benefit", original_total_benefit)
+                    if claim_lines and original_total_charge > 0:
+                        charge_ratio = Decimal(str(new_charge)) / original_total_charge
+                    else:
+                        charge_ratio = Decimal("1")
+                    if claim_lines and (original_total_benefit or Decimal("0")) > 0:
+                        benefit_ratio = Decimal(str(new_benefit)) / original_total_benefit
+                    else:
+                        benefit_ratio = Decimal("1")
+                    for cl in claim_lines:
+                        new_line_charge = (cl.charge_amount * charge_ratio).quantize(
+                            Decimal("0.01")
+                        )
+                        new_line_benefit = (
+                            (cl.benefit_amount or Decimal("0")) * benefit_ratio
+                        ).quantize(Decimal("0.01"))
+                        object.__setattr__(cl, "charge_amount", new_line_charge)
+                        object.__setattr__(cl, "benefit_amount", new_line_benefit)
+                        object.__setattr__(
+                            cl, "gap_amount", new_line_charge - new_line_benefit,
+                        )
+
+                    # Re-sum header from mirrored lines so header = Σ lines.
+                    # fraud_fields doesn't carry total_gap; preserve invariant.
+                    new_total_charge = sum(
+                        (cl.charge_amount for cl in claim_lines), Decimal("0"),
+                    )
+                    new_total_benefit = sum(
+                        (cl.benefit_amount or Decimal("0") for cl in claim_lines),
+                        Decimal("0"),
+                    )
+                    new_total_gap = sum(
+                        (cl.gap_amount or Decimal("0") for cl in claim_lines),
+                        Decimal("0"),
+                    )
+                    object.__setattr__(claim, "total_charge", new_total_charge)
+                    object.__setattr__(claim, "total_benefit", new_total_benefit)
+                    object.__setattr__(claim, "total_gap", new_total_gap)
 
         # Write claim as SUBMITTED
         self.batch_writer.add("claims.claim", claim.model_dump_db())
@@ -605,6 +705,14 @@ class ClaimsProcess(BaseProcess):
             denial_reason=denial_reason if not approved else None,
             benefit_category_id=None,  # Hospital claims don't track per-category usage
             benefit_amount=None,
+            line_snapshots=[
+                {
+                    "claim_line_id": cl.claim_line_id,
+                    "benefit_amount": cl.benefit_amount,
+                    "charge_amount": cl.charge_amount,
+                }
+                for cl in claim_lines
+            ],
         )
 
         self.increment_stat("hospital_claims")
@@ -620,6 +728,7 @@ class ClaimsProcess(BaseProcess):
             ):
                 self._generate_duplicate_claim(
                     claim, member_data, fraud_type_applied, admission_date,
+                    source_lines=claim_lines,
                 )
             self.increment_stat("fraud_claims")
 
@@ -628,7 +737,7 @@ class ClaimsProcess(BaseProcess):
             if not fraud_type_applied or fraud_type_applied in (
                 FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
             ):
-                self._add_to_duplication_pool(claim, member_data)
+                self._add_to_duplication_pool(claim, member_data, source_lines=claim_lines)
 
     def _generate_ambulance_claim(
         self,
@@ -648,7 +757,7 @@ class ClaimsProcess(BaseProcess):
         approved, denial_reason = self._should_approve_claim(ClaimType.AMBULANCE)
 
         # Generate claim as SUBMITTED (both approved and stochastic rejected)
-        claim, ambulance = self.claims_gen.generate_ambulance_claim(
+        claim, claim_line, ambulance = self.claims_gen.generate_ambulance_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
             coverage=member_data.get("ambulance_coverage"),
@@ -664,28 +773,61 @@ class ClaimsProcess(BaseProcess):
                 if fraud_type_applied not in (
                     FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
                 ):
-                    # Inline fraud: modify claim header
+                    # Inline fraud: modify claim header and mirror onto the line
                     fraud_fields = self._get_inline_fraud_fields(
                         claim, fraud_type_applied, member_data,
                     )
                     for key, value in fraud_fields.items():
                         object.__setattr__(claim, key, value)
+                    if "total_charge" in fraud_fields:
+                        new_charge = fraud_fields["total_charge"]
+                        object.__setattr__(claim_line, "charge_amount", new_charge)
+                    if fraud_fields.get("total_benefit") is not None:
+                        new_benefit = fraud_fields["total_benefit"]
+                        object.__setattr__(claim_line, "benefit_amount", new_benefit)
+                        object.__setattr__(
+                            claim_line,
+                            "gap_amount",
+                            claim_line.charge_amount - new_benefit,
+                        )
+                    # Re-sum header (fraud_fields doesn't carry total_gap)
+                    object.__setattr__(
+                        claim,
+                        "total_charge",
+                        claim_line.charge_amount,
+                    )
+                    object.__setattr__(
+                        claim,
+                        "total_benefit",
+                        claim_line.benefit_amount or Decimal("0"),
+                    )
+                    object.__setattr__(
+                        claim,
+                        "total_gap",
+                        claim_line.gap_amount or Decimal("0"),
+                    )
 
-        # Write claim as SUBMITTED
+        # Write claim + line + ambulance detail as SUBMITTED
         self.batch_writer.add("claims.claim", claim.model_dump_db())
+        self.batch_writer.add("claims.claim_line", claim_line.model_dump())
         self.batch_writer.add("claims.ambulance_claim", ambulance.model_dump())
 
-        # Ambulance claims don't have claim_lines in the traditional sense
-        # We don't track them separately, but schedule transitions for the main claim
         self._schedule_claim_transitions(
             claim=claim,
-            claim_line_ids=[],  # Ambulance claims have no separate claim_lines
+            claim_line_ids=[claim_line.claim_line_id],
             member_data=member_data,
             lodgement_date=incident_date,
             approved=approved,
             denial_reason=denial_reason if not approved else None,
             benefit_category_id=None,  # Ambulance claims don't track per-category usage
             benefit_amount=None,
+            line_snapshots=[
+                {
+                    "claim_line_id": claim_line.claim_line_id,
+                    "benefit_amount": claim_line.benefit_amount,
+                    "charge_amount": claim_line.charge_amount,
+                }
+            ],
         )
 
         self.increment_stat("ambulance_claims")
@@ -697,6 +839,7 @@ class ClaimsProcess(BaseProcess):
             ):
                 self._generate_duplicate_claim(
                     claim, member_data, fraud_type_applied, incident_date,
+                    source_lines=[claim_line],
                 )
             self.increment_stat("fraud_claims")
 
@@ -705,7 +848,7 @@ class ClaimsProcess(BaseProcess):
             if not fraud_type_applied or fraud_type_applied in (
                 FraudType.EXACT_DUPLICATE, FraudType.NEAR_DUPLICATE,
             ):
-                self._add_to_duplication_pool(claim, member_data)
+                self._add_to_duplication_pool(claim, member_data, source_lines=[claim_line])
 
     def _generate_rejected_claim(
         self,
@@ -727,7 +870,7 @@ class ClaimsProcess(BaseProcess):
             denial_reason: Reason for denial (DenialReason enum)
             **kwargs: Additional args (e.g., age for hospital claims)
         """
-        claim, claim_line = self.claims_gen.generate_rejected_claim(
+        claim, claim_line, extras_claim = self.claims_gen.generate_rejected_claim(
             policy=member_data.get("policy"),
             member=member_data.get("member"),
             claim_type=claim_type,
@@ -739,6 +882,14 @@ class ClaimsProcess(BaseProcess):
         # Write claim and claim line as SUBMITTED
         self.batch_writer.add("claims.claim", claim.model_dump_db())
         self.batch_writer.add("claims.claim_line", claim_line.model_dump())
+        if extras_claim is not None:
+            self.batch_writer.add(
+                "claims.extras_claim", extras_claim.model_dump_db(),
+            )
+
+        extras_claim_ids = (
+            [extras_claim.extras_claim_id] if extras_claim is not None else None
+        )
 
         # Schedule lifecycle transitions: SUBMITTED -> ASSESSED -> REJECTED
         self._schedule_claim_transitions(
@@ -750,6 +901,14 @@ class ClaimsProcess(BaseProcess):
             denial_reason=denial_reason,
             benefit_category_id=None,  # No benefit tracking for rejected claims
             benefit_amount=None,
+            extras_claim_ids=extras_claim_ids,
+            line_snapshots=[
+                {
+                    "claim_line_id": claim_line.claim_line_id,
+                    "benefit_amount": claim_line.benefit_amount,
+                    "charge_amount": claim_line.charge_amount,
+                }
+            ],
         )
 
         self.increment_stat("rejected_claims")
@@ -776,6 +935,8 @@ class ClaimsProcess(BaseProcess):
         original_benefit: Decimal | None = None,
         original_gap: Decimal | None = None,
         extras_claim_id: UUID | None = None,
+        extras_claim_ids: list[UUID] | None = None,
+        line_snapshots: list[dict[str, Any]] | None = None,
     ) -> None:
         """
         Schedule future state transitions for a claim.
@@ -802,7 +963,10 @@ class ClaimsProcess(BaseProcess):
             additional_gap: Gap adjustment due to capping (extras)
             original_benefit: Original uncapped benefit (extras)
             original_gap: Original gap before capping (extras)
-            extras_claim_id: Extras claim ID for capping updates (extras)
+            extras_claim_id: (Legacy) extras claim ID — first line's row when
+                a claim has multiple lines.
+            extras_claim_ids: All extras_claim IDs aligned 1:1 with
+                claim_line_ids (required for cap-from-end multi-line capping).
         """
         delays = self.config.claims.processing_delays
         auto_adj = delays.auto_adjudication
@@ -847,6 +1011,8 @@ class ClaimsProcess(BaseProcess):
             "original_benefit": original_benefit,
             "original_gap": original_gap,
             "extras_claim_id": extras_claim_id,
+            "extras_claim_ids": extras_claim_ids,
+            "line_snapshots": line_snapshots,
             # Claim-level totals for churn model write-back
             "claim_total_benefit": claim.total_benefit,
             "claim_total_gap": claim.total_gap,
@@ -978,18 +1144,54 @@ class ClaimsProcess(BaseProcess):
                     self._update_claim_status(claim_id, ClaimStatus.APPROVED)
                     data["status"] = "APPROVED"
                 else:
-                    # Stochastic rejection at approval stage
+                    # Stochastic rejection at approval stage: zero out benefits so
+                    # claim totals and line amounts reflect the rejection outcome.
+                    total_charge = float(data["total_charge"]) if data.get("total_charge") else 0.0
                     self._update_claim_status(
                         claim_id,
                         ClaimStatus.REJECTED,
                         rejection_reason_id=self._get_rejection_reason_id(data["denial_reason"]),
                         rejection_notes=data["denial_reason"].value if data["denial_reason"] else None,
+                        total_benefit=0.0,
+                        total_gap=total_charge,
                     )
-                    # Update claim lines to Rejected
-                    for line_id in data["claim_line_ids"]:
-                        # Flush if claim_line is still in buffer for CDC
+                    # Zero each claim line: benefit -> 0, gap -> charge_amount,
+                    # medicare_benefit -> 0 (MBS lines only; nulls are left
+                    # null so the DB column continues to reflect "not an MBS
+                    # line" for non-MBS entries).
+                    rejection_reason_id = self._get_rejection_reason_id(data["denial_reason"])
+                    for snap in data.get("line_snapshots") or []:
+                        line_id = snap["claim_line_id"]
+                        charge = float(snap.get("charge_amount", 0) or 0)
                         self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", line_id)
-                        self._update_claim_line_status(line_id, "Rejected")
+                        self.batch_writer.update_record(
+                            "claim_line",
+                            "claim_line_id",
+                            line_id,
+                            {
+                                "line_status": "Rejected",
+                                "benefit_amount": 0.0,
+                                "medicare_benefit": 0.0,
+                                "gap_amount": charge,
+                                "rejection_reason_id": rejection_reason_id,
+                                "modified_at": self.sim_env.current_datetime.isoformat(),
+                                "modified_by": "SIMULATION",
+                            },
+                        )
+                    # Zero extras_claim rows for Extras claims (aligned 1:1 with lines).
+                    for ec_id in data.get("extras_claim_ids") or []:
+                        self.batch_writer.flush_for_cdc("extras_claim", "extras_claim_id", ec_id)
+                        self.batch_writer.update_record(
+                            "extras_claim",
+                            "extras_claim_id",
+                            ec_id,
+                            {
+                                "benefit_amount": 0.0,
+                                "annual_limit_impact": 0.0,
+                                "modified_at": self.sim_env.current_datetime.isoformat(),
+                                "modified_by": "SIMULATION",
+                            },
+                        )
 
                     # Emit CRM event for claim rejection
                     member_id = data["member_data"]["member"].member_id
@@ -1063,72 +1265,176 @@ class ClaimsProcess(BaseProcess):
 
     def _apply_benefit_capping(self, claim_id: UUID, data: dict) -> None:
         """
-        Apply benefit capping during ASSESSED transition for audit trail.
+        Apply cap-from-end benefit capping during ASSESSED transition.
 
-        SUBMITTED state shows original uncapped amounts.
-        ASSESSED state shows capped amounts (after limit verification).
+        Walks lines in ``line_number`` order and subtracts each line's
+        ``benefit_amount`` from the remaining annual limit. When the cap is
+        exhausted partway through a line, that line receives a partial
+        benefit (the remainder) and all subsequent lines are fully zeroed —
+        their benefit becomes 0 and the full charge flows to the gap. The
+        zeroed lines are tagged with the ``LIMITS_EXHAUSTED`` rejection
+        reason.
 
-        Updates claim, claim_line, and extras_claim records with capped amounts.
+        The claim header is then re-summed from the updated line amounts
+        (preserving the invariant header = Σ lines).
 
         Args:
             claim_id: The claim UUID
-            data: Pending claim data with capping info
+            data: Pending claim data with capping info and per-line amounts
         """
-        capped_benefit = data["capped_benefit"]
+        capped_benefit_total = data["capped_benefit"]  # total cap target
         additional_gap = data["additional_gap"]
         original_gap = data.get("original_gap", Decimal("0"))
         claim_line_ids = data["claim_line_ids"]
-        extras_claim_id = data.get("extras_claim_id")
+        extras_claim_ids = data.get("extras_claim_ids") or []
+        # Per-line snapshots captured at submission time
+        line_snapshots: list[dict[str, Any]] = data.get("line_snapshots") or []
 
-        # Update claim header with capped amounts
+        # Legacy fast-path: single claim_line and no snapshots — apply scalar
+        # capped_benefit uniformly (matches prior behaviour for 1-line claims).
+        if not line_snapshots or len(claim_line_ids) <= 1:
+            self.batch_writer.update_record(
+                "claim",
+                "claim_id",
+                claim_id,
+                {
+                    "total_benefit": float(capped_benefit_total),
+                    "total_gap": float(original_gap + additional_gap),
+                    "modified_at": self.sim_env.current_datetime.isoformat(),
+                    "modified_by": "SIMULATION",
+                },
+            )
+            for claim_line_id in claim_line_ids:
+                self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", claim_line_id)
+                self.batch_writer.update_record(
+                    "claim_line",
+                    "claim_line_id",
+                    claim_line_id,
+                    {
+                        "benefit_amount": float(capped_benefit_total),
+                        "gap_amount": float(original_gap + additional_gap),
+                        "modified_at": self.sim_env.current_datetime.isoformat(),
+                        "modified_by": "SIMULATION",
+                    },
+                )
+            legacy_extras_id = data.get("extras_claim_id")
+            if legacy_extras_id:
+                self.batch_writer.flush_for_cdc(
+                    "extras_claim", "extras_claim_id", legacy_extras_id,
+                )
+                self.batch_writer.update_record(
+                    "extras_claim",
+                    "extras_claim_id",
+                    legacy_extras_id,
+                    {
+                        "benefit_amount": float(capped_benefit_total),
+                        "annual_limit_impact": float(capped_benefit_total),
+                        "modified_at": self.sim_env.current_datetime.isoformat(),
+                        "modified_by": "SIMULATION",
+                    },
+                )
+            logger.debug(
+                "benefit_capping_applied",
+                claim_id=str(claim_id),
+                strategy="scalar",
+                capped_benefit=float(capped_benefit_total),
+                additional_gap=float(additional_gap),
+            )
+            return
+
+        # Cap-from-end: walk lines in order, consuming remaining_cap
+        remaining_cap = Decimal(str(capped_benefit_total))
+        # LIMITS_EXHAUSTED is reason_code "LIMITS_EXHAUSTED" (id=2 in seed
+        # reference data). Resolve by enum to be resilient to renumbering.
+        limits_exhausted_id = self._get_rejection_reason_id(
+            DenialReason.LIMITS_EXHAUSTED,
+        )
+
+        new_total_benefit = Decimal("0")
+        new_total_gap = Decimal("0")
+        new_total_charge = Decimal("0")
+
+        for idx, snap in enumerate(line_snapshots):
+            line_id = snap["claim_line_id"]
+            orig_benefit = Decimal(str(snap.get("benefit_amount", "0") or "0"))
+            orig_charge = Decimal(str(snap.get("charge_amount", "0") or "0"))
+
+            if remaining_cap >= orig_benefit:
+                # Full benefit retained
+                new_benefit = orig_benefit
+                new_gap = orig_charge - new_benefit
+                rejection_id: int | None = None
+                remaining_cap -= orig_benefit
+            elif remaining_cap > 0:
+                # Partial: cap remainder paid, rest flows to gap
+                new_benefit = remaining_cap
+                new_gap = orig_charge - new_benefit
+                rejection_id = None  # Line still partially paid
+                remaining_cap = Decimal("0")
+            else:
+                # Fully exhausted — zero benefit, whole line becomes gap
+                new_benefit = Decimal("0")
+                new_gap = orig_charge
+                rejection_id = limits_exhausted_id
+
+            self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", line_id)
+            line_update: dict[str, Any] = {
+                "benefit_amount": float(new_benefit),
+                "gap_amount": float(new_gap),
+                "modified_at": self.sim_env.current_datetime.isoformat(),
+                "modified_by": "SIMULATION",
+            }
+            if rejection_id is not None:
+                line_update["rejection_reason_id"] = rejection_id
+            self.batch_writer.update_record(
+                "claim_line",
+                "claim_line_id",
+                line_id,
+                line_update,
+            )
+
+            # Mirror on matching extras_claim row when present
+            if idx < len(extras_claim_ids):
+                ec_id = extras_claim_ids[idx]
+                self.batch_writer.flush_for_cdc(
+                    "extras_claim", "extras_claim_id", ec_id,
+                )
+                self.batch_writer.update_record(
+                    "extras_claim",
+                    "extras_claim_id",
+                    ec_id,
+                    {
+                        "benefit_amount": float(new_benefit),
+                        "annual_limit_impact": float(new_benefit),
+                        "modified_at": self.sim_env.current_datetime.isoformat(),
+                        "modified_by": "SIMULATION",
+                    },
+                )
+
+            new_total_benefit += new_benefit
+            new_total_gap += new_gap
+            new_total_charge += orig_charge
+
+        # Re-sum header to preserve invariant
         self.batch_writer.update_record(
             "claim",
             "claim_id",
             claim_id,
             {
-                "total_benefit": float(capped_benefit),
-                "total_gap": float(original_gap + additional_gap),
+                "total_benefit": float(new_total_benefit),
+                "total_gap": float(new_total_gap),
                 "modified_at": self.sim_env.current_datetime.isoformat(),
                 "modified_by": "SIMULATION",
             },
         )
 
-        # Update claim line with capped amounts
-        for claim_line_id in claim_line_ids:
-            self.batch_writer.flush_for_cdc("claim_line", "claim_line_id", claim_line_id)
-            self.batch_writer.update_record(
-                "claim_line",
-                "claim_line_id",
-                claim_line_id,
-                {
-                    "benefit_amount": float(capped_benefit),
-                    "gap_amount": float(original_gap + additional_gap),
-                    "modified_at": self.sim_env.current_datetime.isoformat(),
-                    "modified_by": "SIMULATION",
-                },
-            )
-
-        # Update extras claim with capped amounts (if extras claim)
-        if extras_claim_id:
-            self.batch_writer.flush_for_cdc("extras_claim", "extras_claim_id", extras_claim_id)
-            self.batch_writer.update_record(
-                "extras_claim",
-                "extras_claim_id",
-                extras_claim_id,
-                {
-                    "benefit_amount": float(capped_benefit),
-                    "annual_limit_impact": float(capped_benefit),
-                    "modified_at": self.sim_env.current_datetime.isoformat(),
-                    "modified_by": "SIMULATION",
-                },
-            )
-
         logger.debug(
             "benefit_capping_applied",
             claim_id=str(claim_id),
-            original_benefit=float(data.get("original_benefit", 0) or 0),
-            capped_benefit=float(capped_benefit),
-            additional_gap=float(additional_gap),
+            strategy="cap_from_end",
+            new_total_benefit=float(new_total_benefit),
+            new_total_gap=float(new_total_gap),
+            lines=len(line_snapshots),
         )
 
     def _update_claim_status(
@@ -1601,8 +1907,15 @@ class ClaimsProcess(BaseProcess):
         member_data: dict,
         fraud_type: FraudType,
         service_date: date,
+        source_lines: list[ClaimLineCreate] | None = None,
     ) -> None:
-        """Generate a duplicate fraud claim from a legitimate source claim."""
+        """Generate a duplicate fraud claim from a legitimate source claim.
+
+        Passes the full list of source lines so that EXACT_DUPLICATE can
+        mirror them 1:1 and NEAR_DUPLICATE can perturb each line
+        independently — preserving the item-count signal used by ML
+        fraud-detection features.
+        """
         # Build claim snapshot for the fraud generator
         claim_snapshot = {
             "claim_id": source_claim.claim_id,
@@ -1634,14 +1947,30 @@ class ClaimsProcess(BaseProcess):
                 claim_snapshot, service_date,
             )
 
-        self._write_duplicate_claim(dup_data, member_data)
+        self._write_duplicate_claim(
+            dup_data, member_data, source_lines=source_lines or [],
+        )
 
     def _write_duplicate_claim(
         self,
         dup_data: dict[str, Any],
         member_data: dict,
+        source_lines: list[ClaimLineCreate] | None = None,
     ) -> None:
-        """Write a duplicate fraud claim to batch writer."""
+        """Write a duplicate fraud claim — mirror each source line.
+
+        For EXACT_DUPLICATE the lines are copied identically (same item_code,
+        charge/benefit/gap) so the claim looks structurally identical to
+        the original, just submitted twice.
+
+        For NEAR_DUPLICATE each line amount is independently perturbed by
+        ±``per_line_amount_std_pct`` so the line count matches the original
+        but amounts differ slightly.
+
+        Header totals are re-summed from the written lines to preserve the
+        header = Σ lines invariant.
+        """
+        source_lines = source_lines or []
         claim_id = self.id_generator.generate_uuid()
         claim_number = self.id_generator.generate_claim_number()
 
@@ -1653,6 +1982,88 @@ class ClaimsProcess(BaseProcess):
         claim_channel = dup_data.get("claim_channel", "Online")
         if isinstance(claim_channel, str):
             claim_channel = ClaimChannel(claim_channel)
+
+        fraud_type: FraudType = dup_data["fraud_type"]
+        fraud_inflation_ratio = Decimal(str(dup_data.get("fraud_inflation_ratio", "1.0")))
+
+        # Build mirrored lines
+        mirrored_lines: list[ClaimLineCreate] = []
+        std_pct = 0.0
+        if fraud_type == FraudType.NEAR_DUPLICATE:
+            std_pct = float(
+                self.config.claims.line_composition.near_duplicate_fraud.per_line_amount_std_pct
+            )
+
+        if source_lines:
+            for idx, src in enumerate(source_lines, start=1):
+                if fraud_type == FraudType.EXACT_DUPLICATE:
+                    new_charge = src.charge_amount
+                    new_benefit = src.benefit_amount or Decimal("0")
+                    new_gap = src.gap_amount or (new_charge - new_benefit)
+                else:
+                    # NEAR_DUPLICATE: perturb each line independently
+                    new_charge = self.fraud_gen.perturb_amount(
+                        src.charge_amount, std_pct,
+                    )
+                    # Preserve the original charge→benefit ratio per line
+                    if src.charge_amount and src.charge_amount > 0:
+                        ratio = (src.benefit_amount or Decimal("0")) / src.charge_amount
+                    else:
+                        ratio = Decimal("0")
+                    new_benefit = (new_charge * ratio).quantize(Decimal("0.01"))
+                    new_gap = new_charge - new_benefit
+
+                new_line = ClaimLineCreate(
+                    claim_line_id=self.id_generator.generate_uuid(),
+                    claim_id=claim_id,
+                    line_number=idx,
+                    item_code=src.item_code,
+                    item_description=src.item_description,
+                    clinical_category_id=src.clinical_category_id,
+                    benefit_category_id=src.benefit_category_id,
+                    service_date=dup_data["service_date"],
+                    quantity=src.quantity,
+                    charge_amount=new_charge,
+                    schedule_fee=src.schedule_fee,
+                    benefit_amount=new_benefit,
+                    gap_amount=new_gap,
+                    line_status="Pending",
+                    rejection_reason_id=None,
+                    provider_id=src.provider_id,
+                    provider_number=src.provider_number,
+                    tooth_number=src.tooth_number,
+                    body_part=src.body_part,
+                    created_at=self.sim_env.current_datetime,
+                    created_by="SIMULATION",
+                )
+                mirrored_lines.append(new_line)
+        else:
+            # Fallback when caller didn't supply source lines: single
+            # placeholder line (matches legacy behaviour).
+            mirrored_lines.append(
+                ClaimLineCreate(
+                    claim_line_id=self.id_generator.generate_uuid(),
+                    claim_id=claim_id,
+                    line_number=1,
+                    item_code="DUP",
+                    service_date=dup_data["service_date"],
+                    charge_amount=dup_data["total_charge"],
+                    created_at=self.sim_env.current_datetime,
+                )
+            )
+
+        # Re-sum header totals from the mirrored lines
+        new_total_charge = sum(
+            (cl.charge_amount for cl in mirrored_lines), Decimal("0"),
+        )
+        new_total_benefit = sum(
+            (cl.benefit_amount or Decimal("0") for cl in mirrored_lines),
+            Decimal("0"),
+        )
+        new_total_gap = sum(
+            (cl.gap_amount or Decimal("0") for cl in mirrored_lines),
+            Decimal("0"),
+        )
 
         claim = ClaimCreate(
             claim_id=claim_id,
@@ -1666,42 +2077,41 @@ class ClaimsProcess(BaseProcess):
             lodgement_date=dup_data["lodgement_date"],
             provider_id=dup_data.get("provider_id"),
             hospital_id=dup_data.get("hospital_id"),
-            total_charge=dup_data["total_charge"],
+            total_charge=new_total_charge,
+            total_benefit=new_total_benefit,
+            total_gap=new_total_gap,
             claim_channel=claim_channel,
             is_fraud=True,
-            fraud_type=dup_data["fraud_type"],
+            fraud_type=fraud_type,
             fraud_original_charge=dup_data.get("fraud_original_charge"),
-            fraud_inflation_amount=dup_data.get("fraud_inflation_amount"),
-            fraud_inflation_ratio=dup_data.get("fraud_inflation_ratio"),
+            fraud_inflation_amount=new_total_charge - Decimal(str(dup_data.get("fraud_original_charge") or "0")),
+            fraud_inflation_ratio=fraud_inflation_ratio,
             fraud_source_claim_id=dup_data.get("fraud_source_claim_id"),
             created_at=self.sim_env.current_datetime,
         )
 
-        # Create minimal claim line for duplicate
-        claim_line_id = self.id_generator.generate_uuid()
-        claim_line = ClaimLineCreate(
-            claim_line_id=claim_line_id,
-            claim_id=claim_id,
-            line_number=1,
-            item_code="DUP",
-            service_date=dup_data["service_date"],
-            charge_amount=dup_data["total_charge"],
-            created_at=self.sim_env.current_datetime,
-        )
-
         self.batch_writer.add("claims.claim", claim.model_dump_db())
-        self.batch_writer.add("claims.claim_line", claim_line.model_dump())
+        for cl in mirrored_lines:
+            self.batch_writer.add("claims.claim_line", cl.model_dump())
 
         # Schedule lifecycle transitions (duplicates pass initial checks)
         self._schedule_claim_transitions(
             claim=claim,
-            claim_line_ids=[claim_line_id],
+            claim_line_ids=[cl.claim_line_id for cl in mirrored_lines],
             member_data=member_data,
             lodgement_date=dup_data["lodgement_date"],
             approved=True,
             denial_reason=None,
             benefit_category_id=None,
             benefit_amount=None,
+            line_snapshots=[
+                {
+                    "claim_line_id": cl.claim_line_id,
+                    "benefit_amount": cl.benefit_amount,
+                    "charge_amount": cl.charge_amount,
+                }
+                for cl in mirrored_lines
+            ],
         )
 
     def _write_unbundled_claims(
@@ -1803,6 +2213,8 @@ class ClaimsProcess(BaseProcess):
             self.batch_writer.add("claims.claim", frag_claim.model_dump_db())
             self.batch_writer.add("claims.claim_line", frag_line.model_dump())
 
+            frag_extras_claim_ids: list[UUID] | None = None
+
             # Write detail records for first fragment only
             if i == 0:
                 if extras_claim:
@@ -1813,6 +2225,7 @@ class ClaimsProcess(BaseProcess):
                     self.batch_writer.add(
                         "claims.extras_claim", updated_extras.model_dump_db(),
                     )
+                    frag_extras_claim_ids = [updated_extras.extras_claim_id]
                 if hospital_records:
                     for table_name, record_data in hospital_records:
                         self.batch_writer.add(table_name, record_data)
@@ -1827,6 +2240,14 @@ class ClaimsProcess(BaseProcess):
                 denial_reason=denial_reason if not approved else None,
                 benefit_category_id=None,
                 benefit_amount=frag_benefit,
+                extras_claim_ids=frag_extras_claim_ids,
+                line_snapshots=[
+                    {
+                        "claim_line_id": frag_line_id,
+                        "benefit_amount": frag_benefit,
+                        "charge_amount": frag_charge,
+                    }
+                ],
             )
 
         return len(fragments)
@@ -1835,8 +2256,15 @@ class ClaimsProcess(BaseProcess):
         self,
         claim: ClaimCreate,
         member_data: dict,
+        source_lines: list[ClaimLineCreate] | None = None,
     ) -> None:
-        """Add a legitimate claim to the SharedState duplication pool."""
+        """Add a legitimate claim to the SharedState duplication pool.
+
+        ``source_lines`` is accepted for signature symmetry with the
+        fraud-mirroring paths; it is not currently persisted into
+        SharedState (the immediate duplicate path threads lines directly),
+        but future deferred-duplication code may use it.
+        """
         if not self.shared_state:
             return
         self.shared_state.add_claim_for_duplication({
@@ -1874,4 +2302,41 @@ class ClaimsProcess(BaseProcess):
             prosthesis_claims=stats.get("prosthesis_claims", 0),
             rejected_claims=stats.get("rejected_claims", 0),
             fraud_claims=stats.get("fraud_claims", 0),
+        )
+
+    def finalize(self) -> None:
+        """Drain any pending claim transitions at simulation end.
+
+        Fast-forwards claims still in SUBMITTED, ASSESSED, or APPROVED to
+        their terminal state (PAID if approved, REJECTED otherwise) using
+        the current simulation datetime as the modification timestamp.
+        Without this drain, claims scheduled late in the simulation are
+        left stranded in non-terminal states.
+        """
+        if not self.pending_claims:
+            return
+        end_date = self.sim_env.current_datetime.date()
+        drained = 0
+        for claim_id, data in list(self.pending_claims.items()):
+            status = data["status"]
+            if status not in ("SUBMITTED", "ASSESSED", "APPROVED"):
+                continue
+            # Coerce scheduled dates so _process_claim_transitions fires the
+            # remaining transitions immediately. Include APPROVED so
+            # already-approved claims whose payment_date falls after
+            # end_date still land on PAID.
+            data["assessment_date"] = min(data["assessment_date"], end_date)
+            data["approval_date"] = min(data["approval_date"], end_date)
+            data["payment_date"] = min(data["payment_date"], end_date)
+            drained += 1
+        # Run the transition loop three times to step a SUBMITTED claim
+        # through SUBMITTED -> ASSESSED -> (APPROVED|REJECTED) -> PAID.
+        self._process_claim_transitions(end_date)
+        self._process_claim_transitions(end_date)
+        self._process_claim_transitions(end_date)
+        logger.info(
+            "claims_process_finalized",
+            worker_id=self.worker_id,
+            drained=drained,
+            remaining=len(self.pending_claims),
         )

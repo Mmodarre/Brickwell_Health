@@ -111,6 +111,13 @@ class ParallelRunner:
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
 
+        # Cap any cross-worker benefit-limit overspend before downstream
+        # accounting engines read claim and benefit_usage totals.
+        self._run_benefit_usage_scrub()
+
+        # Management expense journal lines (fund-level, post-simulation)
+        self._run_management_expenses()
+
         # IFRS 17 / PAA LRC post-simulation accounting
         self._run_ifrs17_lrc()
 
@@ -173,6 +180,13 @@ class ParallelRunner:
 
         # Enrich survey contexts with historical data (post-simulation)
         self._enrich_survey_contexts()
+
+        # Cap any cross-worker benefit-limit overspend before downstream
+        # accounting engines read claim and benefit_usage totals.
+        self._run_benefit_usage_scrub()
+
+        # Management expense journal lines (fund-level, post-simulation)
+        self._run_management_expenses()
 
         # IFRS 17 / PAA LRC post-simulation accounting
         self._run_ifrs17_lrc()
@@ -473,6 +487,85 @@ class ParallelRunner:
             )
 
 
+    def _run_management_expenses(self) -> None:
+        """
+        Run the management expense engine against the simulated data.
+
+        Generates fund-level monthly GL journal entries for management expenses.
+        Skipped entirely when ``config.management_expense.enabled`` is false.
+        """
+        mgmt_cfg = getattr(self.config, "management_expense", None)
+        if mgmt_cfg is None or not mgmt_cfg.enabled:
+            logger.info("management_expense_engine_skipped_disabled")
+            return
+
+        logger.info("management_expense_engine_starting_post_sim")
+        try:
+            from brickwell_health.management_expense.engine import ManagementExpenseEngine
+            from brickwell_health.management_expense import export as mgmt_export
+
+            engine = create_engine_from_config(self.config.database)
+
+            mgmt_engine = ManagementExpenseEngine(
+                config=mgmt_cfg,
+                db_engine=engine,
+                sim_start=self.config.simulation.start_date,
+                sim_end=self.config.simulation.end_date,
+            )
+            counts = mgmt_engine.run()
+            logger.info("management_expense_engine_completed", **counts)
+
+            if mgmt_cfg.csv_export_enabled:
+                try:
+                    run_id = time.strftime("%Y%m%d_%H%M%S")
+                    granularity = getattr(mgmt_cfg, "csv_export_granularity", "full")
+                    if granularity == "monthly":
+                        written = mgmt_export.export_monthly(
+                            db_engine=engine,
+                            out_dir=Path(mgmt_cfg.csv_export_dir),
+                            run_id=run_id,
+                            mode=mgmt_cfg.csv_export_mode,
+                        )
+                    else:
+                        written = mgmt_export.export_all(
+                            db_engine=engine,
+                            out_dir=Path(mgmt_cfg.csv_export_dir),
+                            run_id=run_id,
+                            mode=mgmt_cfg.csv_export_mode,
+                        )
+                    logger.info(
+                        "management_expense_csv_exported",
+                        files=len(written),
+                        granularity=granularity,
+                    )
+                except Exception as ee:
+                    logger.warning(
+                        "management_expense_csv_export_failed", error=str(ee)
+                    )
+
+        except Exception as e:
+            logger.warning("management_expense_engine_failed", error=str(e))
+
+    def _run_benefit_usage_scrub(self) -> None:
+        """Reconcile any annual benefit-limit overspend caused by cross-worker
+        partitioning of claims (members and policies can land on different
+        workers, so each worker's view of cumulative usage is partial).
+
+        Runs before IFRS 17 / management-expense post-processing so those
+        engines see corrected claim and benefit_usage totals.
+        """
+        try:
+            from brickwell_health.db.scrub_benefit_usage import scrub_benefit_usage
+
+            engine = create_engine_from_config(self.config.database)
+            try:
+                counts = scrub_benefit_usage(engine)
+            finally:
+                engine.dispose()
+            logger.info("benefit_usage_scrub_run", **counts)
+        except Exception as e:
+            logger.warning("benefit_usage_scrub_failed", error=str(e))
+
     def _run_ifrs17_lrc(self) -> None:
         """
         Run the IFRS 17 / PAA LRC engine against the simulated data.
@@ -508,13 +601,22 @@ class ParallelRunner:
             if ifrs17_cfg.csv_export_enabled:
                 try:
                     run_id = time.strftime("%Y%m%d_%H%M%S")
-                    written = ifrs17_export.export_all(
-                        db_engine=engine,
-                        out_dir=Path(ifrs17_cfg.csv_export_dir),
-                        run_id=run_id,
-                        mode=ifrs17_cfg.csv_export_mode,
-                    )
-                    logger.info("ifrs17_csv_exported", files=written)
+                    granularity = getattr(ifrs17_cfg, "csv_export_granularity", "full")
+                    if granularity == "monthly":
+                        written = ifrs17_export.export_monthly(
+                            db_engine=engine,
+                            out_dir=Path(ifrs17_cfg.csv_export_dir),
+                            run_id=run_id,
+                            mode=ifrs17_cfg.csv_export_mode,
+                        )
+                    else:
+                        written = ifrs17_export.export_all(
+                            db_engine=engine,
+                            out_dir=Path(ifrs17_cfg.csv_export_dir),
+                            run_id=run_id,
+                            mode=ifrs17_cfg.csv_export_mode,
+                        )
+                    logger.info("ifrs17_csv_exported", files=len(written), granularity=granularity)
                 except Exception as ee:
                     logger.warning("ifrs17_csv_export_failed", error=str(ee))
 

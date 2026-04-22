@@ -1752,7 +1752,7 @@
   },
   {
     "account_id": 104,
-    "account_code": "5500-00",
+    "account_code": "5510-00",
     "account_name": "Depreciation and Amortisation",
     "account_type": "Expense",
     "account_subtype": "Depreciation",
@@ -1769,7 +1769,7 @@
   },
   {
     "account_id": 105,
-    "account_code": "5500-01",
+    "account_code": "5510-01",
     "account_name": "Depreciation - Computer Equipment",
     "account_type": "Expense",
     "account_subtype": "Depreciation",
@@ -1786,7 +1786,7 @@
   },
   {
     "account_id": 106,
-    "account_code": "5500-02",
+    "account_code": "5510-02",
     "account_name": "Depreciation - Office Equipment",
     "account_type": "Expense",
     "account_subtype": "Depreciation",
@@ -1803,7 +1803,7 @@
   },
   {
     "account_id": 107,
-    "account_code": "5500-03",
+    "account_code": "5510-03",
     "account_name": "Depreciation - Furniture and Fittings",
     "account_type": "Expense",
     "account_subtype": "Depreciation",
@@ -1820,7 +1820,7 @@
   },
   {
     "account_id": 108,
-    "account_code": "5500-04",
+    "account_code": "5510-04",
     "account_name": "Depreciation - Leasehold Improvements",
     "account_type": "Expense",
     "account_subtype": "Depreciation",
@@ -1837,7 +1837,7 @@
   },
   {
     "account_id": 109,
-    "account_code": "5500-05",
+    "account_code": "5510-05",
     "account_name": "Amortisation - Software",
     "account_type": "Expense",
     "account_subtype": "Amortisation",

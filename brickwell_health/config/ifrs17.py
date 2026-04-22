@@ -48,3 +48,11 @@ class IFRS17Config(BaseModel):
             "instances where COPY is not permitted."
         ),
     )
+    csv_export_granularity: Literal["full", "monthly"] = Field(
+        default="full",
+        description=(
+            "Export granularity: 'full' writes one CSV per table (all months); "
+            "'monthly' writes one CSV per table per reporting month, organised "
+            "in YYYY-MM subdirectories — suitable for incremental ingestion."
+        ),
+    )

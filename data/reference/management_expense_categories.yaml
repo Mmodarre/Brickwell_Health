@@ -1,0 +1,264 @@
+# Management Expense Category Definitions
+# ========================================
+# Maps each expense category to GL accounts, cost centre, and cost driver.
+#
+# Cost driver types:
+#   per_policy:  annual_rate_per_unit x policy_count / 12
+#   per_member:  annual_rate_per_unit x member_count / 12
+#   pct_nep:     annual_rate_per_unit x monthly_nep  (rate is a fraction)
+#   fixed:       annual_rate_per_unit / 12
+#
+# Benchmark target: ~10.2% MER on ~$188M NEP for ~60K policies / ~130K members
+# Source: APRA PHI Statistics FY2022-23, nib Holdings FY2024 Annual Report
+
+categories:
+  # ---- PERSONNEL (48% of total) ----------------------------------------
+  - category_id: personnel_salaries
+    description: "Salaries and wages"
+    cost_driver: per_policy
+    annual_rate_per_unit: 110.00
+    debit_account_code: "6100-01"     # Salaries and Wages
+    credit_account_code: "1100-01"    # Cash at Bank - Operating
+    cost_centre_code: "CC-300"        # Operations Division
+
+  - category_id: personnel_superannuation
+    description: "Superannuation contributions (11.5% SG)"
+    cost_driver: per_policy
+    annual_rate_per_unit: 12.65
+    debit_account_code: "6100-02"     # Superannuation Contributions
+    credit_account_code: "2190-01"    # Accrued Expenses
+    cost_centre_code: "CC-300"
+
+  - category_id: personnel_training
+    description: "Staff training and development"
+    cost_driver: fixed
+    annual_rate_per_unit: 350000
+    debit_account_code: "6100-05"     # Staff Training and Development
+    credit_account_code: "2190-01"    # Accrued Expenses
+    cost_centre_code: "CC-600"        # Human Resources
+
+  - category_id: personnel_recruitment
+    description: "Recruitment costs"
+    cost_driver: fixed
+    annual_rate_per_unit: 250000
+    debit_account_code: "6100-06"     # Recruitment Costs
+    credit_account_code: "2190-01"
+    cost_centre_code: "CC-600"
+
+  - category_id: personnel_workers_comp
+    description: "Workers compensation and payroll tax"
+    cost_driver: per_policy
+    annual_rate_per_unit: 5.50
+    debit_account_code: "6100-03"     # Workers Compensation Insurance
+    credit_account_code: "2190-01"
+    cost_centre_code: "CC-300"
+
+  # ---- IT & TECHNOLOGY (12%) -------------------------------------------
+  - category_id: it_software_licences
+    description: "Software licences and subscriptions"
+    cost_driver: per_policy
+    annual_rate_per_unit: 14.00
+    debit_account_code: "6200-01"     # Software Licences and Subscriptions
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-400"        # Information Technology
+
+  - category_id: it_cloud_hosting
+    description: "Cloud services and hosting"
+    cost_driver: per_policy
+    annual_rate_per_unit: 10.00
+    debit_account_code: "6200-04"     # Cloud Services and Hosting
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-420"        # IT Infrastructure
+
+  - category_id: it_consulting
+    description: "IT consulting and support"
+    cost_driver: fixed
+    annual_rate_per_unit: 400000
+    debit_account_code: "6200-03"     # IT Consulting and Support
+    credit_account_code: "2110-01"    # Accounts Payable - Trade
+    cost_centre_code: "CC-400"
+
+  - category_id: it_hardware
+    description: "Hardware maintenance"
+    cost_driver: fixed
+    annual_rate_per_unit: 180000
+    debit_account_code: "6200-02"     # Hardware Maintenance
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-420"
+
+  # ---- MARKETING (6%) --------------------------------------------------
+  - category_id: marketing_digital
+    description: "Digital marketing"
+    cost_driver: per_policy
+    annual_rate_per_unit: 8.00
+    debit_account_code: "6300-01"     # Digital Marketing
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-510"        # Digital Marketing
+
+  - category_id: marketing_traditional
+    description: "TV, radio, print advertising"
+    cost_driver: fixed
+    annual_rate_per_unit: 300000
+    debit_account_code: "6300-02"     # Television and Radio Advertising
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-520"        # Brand and Communications
+
+  - category_id: marketing_sponsorships
+    description: "Sponsorships and events"
+    cost_driver: fixed
+    annual_rate_per_unit: 120000
+    debit_account_code: "6300-04"     # Sponsorships and Events
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-520"
+
+  # ---- OCCUPANCY (4%) --------------------------------------------------
+  - category_id: occupancy_rent
+    description: "Office rent"
+    cost_driver: fixed
+    annual_rate_per_unit: 360000
+    debit_account_code: "6400-01"     # Office Rent
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-300"
+
+  - category_id: occupancy_utilities
+    description: "Utilities and building maintenance"
+    cost_driver: fixed
+    annual_rate_per_unit: 120000
+    debit_account_code: "6400-02"     # Utilities
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-300"
+
+  - category_id: occupancy_security
+    description: "Security services"
+    cost_driver: fixed
+    annual_rate_per_unit: 72000
+    debit_account_code: "6400-04"     # Security Services
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-300"
+
+  # ---- PROFESSIONAL SERVICES (6%) --------------------------------------
+  - category_id: professional_audit
+    description: "Audit fees"
+    cost_driver: fixed
+    annual_rate_per_unit: 140000
+    debit_account_code: "6500-01"     # Audit Fees
+    credit_account_code: "2110-01"    # Accounts Payable - Trade
+    cost_centre_code: "CC-210"        # Financial Accounting
+
+  - category_id: professional_legal
+    description: "Legal fees"
+    cost_driver: fixed
+    annual_rate_per_unit: 140000
+    debit_account_code: "6500-02"     # Legal Fees
+    credit_account_code: "2110-01"
+    cost_centre_code: "CC-700"        # Risk and Compliance
+
+  - category_id: professional_actuarial
+    description: "Actuarial fees"
+    cost_driver: pct_nep
+    annual_rate_per_unit: 0.002
+    debit_account_code: "6500-03"     # Actuarial Fees
+    credit_account_code: "2110-01"
+    cost_centre_code: "CC-230"        # Actuarial Services
+
+  - category_id: professional_consulting
+    description: "General consulting fees"
+    cost_driver: fixed
+    annual_rate_per_unit: 200000
+    debit_account_code: "6500-04"     # Consulting Fees
+    credit_account_code: "2110-01"
+    cost_centre_code: "CC-100"        # Executive Office
+
+  # ---- REGULATORY & COMPLIANCE (4%) ------------------------------------
+  - category_id: regulatory_apra_levy
+    description: "APRA supervisory levy"
+    cost_driver: pct_nep
+    annual_rate_per_unit: 0.002
+    debit_account_code: "6600-01"     # APRA Levies
+    credit_account_code: "2190-01"    # Accrued Expenses
+    cost_centre_code: "CC-710"        # APRA Compliance
+
+  - category_id: regulatory_phio_levy
+    description: "PHIO contribution levy"
+    cost_driver: per_policy
+    annual_rate_per_unit: 4.00
+    debit_account_code: "6600-02"     # PHIO Levies
+    credit_account_code: "2190-01"
+    cost_centre_code: "CC-710"
+
+  - category_id: regulatory_compliance_reporting
+    description: "Compliance and regulatory reporting"
+    cost_driver: fixed
+    annual_rate_per_unit: 150000
+    debit_account_code: "6600-03"     # Compliance and Regulatory Reporting
+    credit_account_code: "2190-01"
+    cost_centre_code: "CC-700"
+
+  # ---- RISK EQUALISATION (2.5%) ----------------------------------------
+  - category_id: risk_equalisation_net
+    description: "Risk Equalisation net payment (simplified)"
+    cost_driver: pct_nep
+    annual_rate_per_unit: 0.0025
+    debit_account_code: "5500-01"     # Risk Equalisation Trust Fund Levy
+    credit_account_code: "2150-01"    # Risk Equalisation Payable
+    cost_centre_code: "CC-230"        # Actuarial Services
+
+  # ---- DEPRECIATION & AMORTISATION (4.5%) ------------------------------
+  - category_id: depreciation_computer_equipment
+    description: "Depreciation - computer equipment"
+    cost_driver: fixed
+    annual_rate_per_unit: 200000
+    debit_account_code: "5510-01"     # Depreciation - Computer Equipment
+    credit_account_code: "1100-01"    # Cash at Bank (simplified contra-asset)
+    cost_centre_code: "CC-400"
+
+  - category_id: depreciation_office_equipment
+    description: "Depreciation - office equipment and furniture"
+    cost_driver: fixed
+    annual_rate_per_unit: 120000
+    debit_account_code: "5510-02"     # Depreciation - Office Equipment
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-300"
+
+  - category_id: depreciation_software
+    description: "Amortisation - software"
+    cost_driver: fixed
+    annual_rate_per_unit: 380000
+    debit_account_code: "5510-05"     # Amortisation - Software
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-400"
+
+  # ---- FINANCE COSTS (0.5%) --------------------------------------------
+  - category_id: finance_lease_interest
+    description: "Interest on lease liabilities"
+    cost_driver: fixed
+    annual_rate_per_unit: 48000
+    debit_account_code: "5600-01"     # Interest Expense - Lease Liabilities
+    credit_account_code: "2500-01"    # Lease Liabilities - Current
+    cost_centre_code: "CC-300"
+
+  - category_id: finance_bank_charges
+    description: "Bank charges and transaction fees"
+    cost_driver: per_policy
+    annual_rate_per_unit: 2.50
+    debit_account_code: "5600-02"     # Bank Charges and Fees
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-210"        # Financial Accounting
+
+  # ---- REINSURANCE (1.5%) ----------------------------------------------
+  - category_id: reinsurance_premium
+    description: "Reinsurance premiums ceded"
+    cost_driver: pct_nep
+    annual_rate_per_unit: 0.001
+    debit_account_code: "5800-01"     # APRA Statutory Levies (best-fit)
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-230"
+
+  # ---- OTHER ADMIN (3%) ------------------------------------------------
+  - category_id: other_admin_general
+    description: "General administrative expenses"
+    cost_driver: per_policy
+    annual_rate_per_unit: 8.33
+    debit_account_code: "6400-03"     # Building Maintenance (best-fit)
+    credit_account_code: "1100-01"
+    cost_centre_code: "CC-100"        # Executive Office

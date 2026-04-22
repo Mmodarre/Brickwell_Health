@@ -99,6 +99,8 @@ class BatchWriter:
         "ifrs17.monthly_movement",
         "ifrs17.onerous_assessment",
         "ifrs17.journal_line",
+        # Finance schema (post-simulation management expense journal lines)
+        "finance.journal_line",
     ]
 
     def __init__(self, engine: Engine, batch_size: int = 10000):

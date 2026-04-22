@@ -121,6 +121,7 @@ class ClaimLineCreate(BaseModel):
     charge_amount: Decimal = Field(..., ge=0)
     schedule_fee: Optional[Decimal] = None
     benefit_amount: Optional[Decimal] = None
+    medicare_benefit: Optional[Decimal] = None
     gap_amount: Optional[Decimal] = None
 
     line_status: str = Field(default="Pending", max_length=20)

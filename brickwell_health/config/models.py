@@ -400,6 +400,126 @@ class ClaimProcessingDelaysConfig(BaseModel):
     )
 
 
+class LineItemCountConfig(BaseModel):
+    """Configuration for number of line items in a claim visit archetype."""
+
+    # Three modes, mutually exclusive: fixed, probs, or truncated poisson
+    fixed: int | None = Field(
+        default=None,
+        ge=1,
+        description="Fixed number of items (overrides probs/lambda if set)",
+    )
+    probs: dict[int, float] | None = Field(
+        default=None,
+        description="Explicit discrete distribution {count: probability}",
+    )
+    lambda_: float | None = Field(
+        default=None,
+        ge=0,
+        alias="lambda",
+        description="Poisson lambda (used when fixed/probs not set)",
+    )
+    min: int = Field(default=1, ge=1, description="Minimum item count (clamp)")
+    max: int = Field(default=10, ge=1, description="Maximum item count (clamp)")
+    always_include_checkup: bool = Field(
+        default=False,
+        description=(
+            "If True, first item in dental visit should be a preventative"
+            " check-up/exam item regardless of archetype"
+        ),
+    )
+
+    class Config:
+        populate_by_name = True
+
+
+class ArchetypeConfig(BaseModel):
+    """A visit archetype with weights + per-archetype item-count distributions."""
+
+    archetype_weights: dict[str, float] = Field(
+        ...,
+        description="Weights for sampling archetype {name: weight}",
+    )
+    item_count: dict[str, LineItemCountConfig] = Field(
+        ...,
+        description="Item-count distribution per archetype {name: config}",
+    )
+
+
+class NearDuplicateFraudLineConfig(BaseModel):
+    """Per-line perturbation for near-duplicate fraud mirroring."""
+
+    per_line_amount_std_pct: float = Field(
+        default=0.07,
+        ge=0,
+        le=0.5,
+        description="Per-line uniform amount perturbation (±pct)",
+    )
+
+
+class ClaimLineCompositionConfig(BaseModel):
+    """Configuration for multi-line claim composition."""
+
+    dental: ArchetypeConfig = Field(
+        default_factory=lambda: ArchetypeConfig(
+            archetype_weights={
+                "preventative": 0.6,
+                "restorative": 0.3,
+                "major": 0.1,
+            },
+            item_count={
+                "preventative": LineItemCountConfig(
+                    **{"lambda": 1.8, "min": 1, "max": 4, "always_include_checkup": True}
+                ),
+                "restorative": LineItemCountConfig(
+                    **{"lambda": 2.2, "min": 2, "max": 5, "always_include_checkup": True}
+                ),
+                "major": LineItemCountConfig(
+                    **{"lambda": 2.5, "min": 2, "max": 6, "always_include_checkup": True}
+                ),
+            },
+        ),
+        description="Dental visit composition",
+    )
+    optical: ArchetypeConfig = Field(
+        default_factory=lambda: ArchetypeConfig(
+            archetype_weights={"standard": 0.3, "bundle": 0.7},
+            item_count={
+                "standard": LineItemCountConfig(fixed=1),
+                "bundle": LineItemCountConfig(
+                    **{"lambda": 2.4, "min": 2, "max": 3}
+                ),
+            },
+        ),
+        description="Optical visit composition",
+    )
+    physio_like: LineItemCountConfig = Field(
+        default_factory=lambda: LineItemCountConfig(probs={1: 0.8, 2: 0.2}),
+        description=(
+            "Physio / Chiropractic / Osteopathy / Myotherapy / Podiatry item counts"
+        ),
+    )
+    psychology_like: LineItemCountConfig = Field(
+        default_factory=lambda: LineItemCountConfig(fixed=1),
+        description="Psychology / Speech Pathology / Dietetics item counts",
+    )
+    other_extras: LineItemCountConfig = Field(
+        default_factory=lambda: LineItemCountConfig(probs={1: 0.9, 2: 0.1}),
+        description=(
+            "Acupuncture / Remedial Massage / Naturopathy / Hearing /"
+            " Exercise Physiology item counts"
+        ),
+    )
+    ambulance: LineItemCountConfig = Field(
+        default_factory=lambda: LineItemCountConfig(fixed=1),
+        description="Ambulance transport item count (typically 1)",
+    )
+    near_duplicate_fraud: NearDuplicateFraudLineConfig = Field(
+        default_factory=NearDuplicateFraudLineConfig,
+        description="Per-line perturbation for near-duplicate fraud mirroring",
+    )
+
+
 class ClaimsConfig(BaseModel):
     """Claims generation parameters based on APRA 2024-2025 data."""
 
@@ -503,6 +623,12 @@ class ClaimsConfig(BaseModel):
     processing_delays: ClaimProcessingDelaysConfig = Field(
         default_factory=ClaimProcessingDelaysConfig,
         description="Delays for claim state transitions (assessment, approval, payment)",
+    )
+
+    # Multi-line claim composition (archetypes + per-service-type item counts)
+    line_composition: ClaimLineCompositionConfig = Field(
+        default_factory=ClaimLineCompositionConfig,
+        description="Visit archetype and item-count distributions for multi-line claims",
     )
 
 
@@ -1290,6 +1416,11 @@ class SimulationConfig(BaseSettings):
     # IFRS 17 / PAA LRC post-simulation accounting
     ifrs17: "IFRS17Config" = Field(default_factory=lambda: _default_ifrs17_config())
 
+    # Management expense engine (post-simulation, fund-level GL journal lines)
+    management_expense: "ManagementExpenseConfig" = Field(
+        default_factory=lambda: _default_management_expense_config()
+    )
+
     reference_data_path: Path = Field(
         default=Path("data/reference"),
         description="Path to reference data JSON files",
@@ -1310,6 +1441,12 @@ def _default_ifrs17_config() -> "IFRS17Config":
     return IFRS17Config()
 
 
-# Resolve forward reference at import time
+def _default_management_expense_config() -> "ManagementExpenseConfig":
+    from brickwell_health.config.management_expense import ManagementExpenseConfig
+    return ManagementExpenseConfig()
+
+
+# Resolve forward references at import time
 from brickwell_health.config.ifrs17 import IFRS17Config  # noqa: E402
+from brickwell_health.config.management_expense import ManagementExpenseConfig  # noqa: E402
 SimulationConfig.model_rebuild()

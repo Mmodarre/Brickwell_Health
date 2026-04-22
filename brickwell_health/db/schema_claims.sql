@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS claims.claim_line (
     charge_amount           DECIMAL(12,2) NOT NULL,
     schedule_fee            DECIMAL(12,2),
     benefit_amount          DECIMAL(12,2),
+    medicare_benefit        NUMERIC(12,2),
     gap_amount              DECIMAL(12,2),
 
     line_status             VARCHAR(20) NOT NULL DEFAULT 'Pending',
@@ -169,6 +170,9 @@ CREATE TABLE IF NOT EXISTS claims.extras_claim (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ec_claim ON claims.extras_claim(claim_id);
+-- Multi-line claims: one extras_claim row per claim_line, so claim_id is
+-- less selective. Add an index on claim_line_id for per-line lookups.
+CREATE INDEX IF NOT EXISTS idx_ec_claim_line ON claims.extras_claim(claim_line_id);
 CREATE INDEX IF NOT EXISTS idx_ec_service_type ON claims.extras_claim(service_type);
 
 -- AMBULANCE_CLAIM: Ambulance claims
