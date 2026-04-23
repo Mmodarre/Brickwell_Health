@@ -950,12 +950,15 @@ class CampaignConfig(BaseModel):
 class DigitalConfig(BaseModel):
     """Digital behavior and engagement configuration."""
 
+    enabled: bool = Field(default=True, description="Enable digital behavior simulation")
     sessions_per_month: dict = Field(default_factory=dict, description="Sessions per month by engagement level")
     engagement_distribution: dict = Field(default_factory=dict, description="Engagement level distribution")
     duration_mu: float = Field(default=5.99, description="Log-normal mu for session duration")
     duration_sigma: float = Field(default=0.50, description="Log-normal sigma for session duration")
     pages_per_session_mean: float = Field(default=4.53, description="Mean pages per session")
     pages_per_session_dispersion: float = Field(default=2.5, description="Dispersion for pages per session")
+    clicks_per_page_lambda: float = Field(default=1.0, description="Poisson lambda for clicks sampled per page")
+    click_emit_prob: float = Field(default=0.5, description="Probability to emit each sampled click")
     device_distribution: dict = Field(default_factory=dict, description="Device distribution")
     page_category_distribution: dict = Field(default_factory=dict, description="Page category distribution")
     authenticated_rate: float = Field(default=0.70, description="Rate of authenticated sessions")

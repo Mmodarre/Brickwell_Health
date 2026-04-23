@@ -401,18 +401,28 @@ campaign:
 
 # Digital Behavior Configuration
 digital:
-  sessions_per_month:
-    high: 8.0
-    medium: 2.5
-    low: 0.5
+  # Master switch — set to false to skip web_session / digital_event generation entirely.
+  enabled: true
+
+  # Engagement distribution calibrated to J.D. Power 2026 US Healthcare Digital
+  # Experience Study: ~38% of commercial health-plan members are active portal
+  # users in a given month; ~85% have an account but most remain dormant.
   engagement_distribution:
-    high: 0.15
-    medium: 0.35
-    low: 0.50
+    dormant: 0.55
+    low:     0.28
+    medium:  0.12
+    high:    0.05
+  sessions_per_month:
+    dormant: 0.0
+    low:     0.75
+    medium:  2.5
+    high:    6.0
   duration_mu: 5.99
   duration_sigma: 0.50
   pages_per_session_mean: 4.53
   pages_per_session_dispersion: 2.5
+  clicks_per_page_lambda: 1.0
+  click_emit_prob: 0.5
   device_distribution:
     Mobile: 0.55
     Desktop: 0.38

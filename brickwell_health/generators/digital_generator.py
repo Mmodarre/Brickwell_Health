@@ -473,9 +473,11 @@ class DigitalBehaviorGenerator(BaseGenerator[WebSessionCreate]):
         )
 
         # Clicks (Poisson number of clicks)
-        num_clicks = self.rng.poisson(2)
+        clicks_lambda = self.config.get("clicks_per_page_lambda", 1.0)
+        click_emit_prob = self.config.get("click_emit_prob", 0.5)
+        num_clicks = self.rng.poisson(clicks_lambda)
         for _ in range(num_clicks):
-            if self.rng.random() < 0.5:  # 50% chance per potential click
+            if self.rng.random() < click_emit_prob:
                 click_event = DigitalEventCreate(
                     event_id=self.id_generator.generate_uuid(),
                     session_id=session_id,
