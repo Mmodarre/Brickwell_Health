@@ -4,6 +4,7 @@ Database initialization for Brickwell Health Simulator.
 Creates all required tables for simulation.
 """
 
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -81,7 +82,8 @@ def init_database(
     # Load reference data from JSON files into reference tables
     logger.info("loading_reference_data_from_json")
     reference_path = Path(config.reference_data_path)
-    stats = load_reference_data(engine, reference_path)
+    anchor = datetime.combine(config.simulation.start_date, time.min) - timedelta(days=1)
+    stats = load_reference_data(engine, reference_path, created_date_anchor=anchor)
     logger.info("reference_data_loaded", stats=stats)
 
     # Add foreign key constraints from transactional tables to reference tables

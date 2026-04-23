@@ -86,20 +86,29 @@ class ReferenceDataDBLoader:
     Uses PostgreSQL COPY for high-performance bulk inserts.
 
     Usage:
-        loader = ReferenceDataDBLoader(engine, reference_path)
+        loader = ReferenceDataDBLoader(engine, reference_path, anchor)
         loader.load_all()
     """
 
-    def __init__(self, engine: Engine, reference_path: Path | str):
+    def __init__(
+        self,
+        engine: Engine,
+        reference_path: Path | str,
+        created_date_anchor: datetime,
+    ):
         """
         Initialize the reference data loader.
 
         Args:
             engine: SQLAlchemy engine for database connection
             reference_path: Path to reference data directory containing JSON files
+            created_date_anchor: Timestamp to assign to ``created_date`` on every
+                reference record, overriding the hardcoded value in the seed
+                JSON files. Typically one day before ``simulation.start_date``.
         """
         self.engine = engine
         self.reference_path = Path(reference_path)
+        self.created_date_anchor = created_date_anchor
         self.stats: dict[str, int] = {}
 
     def load_all(self) -> dict[str, int]:
@@ -200,6 +209,13 @@ class ReferenceDataDBLoader:
         Returns:
             Transformed list of records
         """
+        # Anchor created_date on every record to one day before sim start,
+        # overriding the hardcoded '2025-01-01T00:00:00' in the seed JSONs.
+        anchor_iso = self.created_date_anchor.isoformat()
+        for record in records:
+            if "created_date" in record:
+                record["created_date"] = anchor_iso
+
         # Table-specific transformations
         if table_name == "benefit_category":
             return self._transform_benefit_category(records)
@@ -406,7 +422,8 @@ class ReferenceDataDBLoader:
 
 def load_reference_data(
     engine: Engine,
-    reference_path: Path | str
+    reference_path: Path | str,
+    created_date_anchor: datetime,
 ) -> dict[str, int]:
     """
     Convenience function to load all reference data.
@@ -414,9 +431,11 @@ def load_reference_data(
     Args:
         engine: SQLAlchemy engine
         reference_path: Path to reference data directory
+        created_date_anchor: Timestamp to stamp on every ``created_date``
+            column across reference tables.
 
     Returns:
         Dictionary of table names to record counts
     """
-    loader = ReferenceDataDBLoader(engine, reference_path)
+    loader = ReferenceDataDBLoader(engine, reference_path, created_date_anchor)
     return loader.load_all()
