@@ -461,7 +461,8 @@ def _setup_cdc_slot(engine) -> None:
     # All schemas to include in CDC
     SCHEMAS = [
         "reference", "policy", "regulatory", "claims", "billing",
-        "member_lifecycle", "crm", "communication", "digital", "survey", "nba"
+        "member_lifecycle", "crm", "communication", "digital", "survey", "nba",
+        "ifrs17", "finance",
     ]
 
     with engine.connect() as conn:
