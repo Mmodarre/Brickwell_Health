@@ -392,11 +392,6 @@ class AcquisitionProcess(BaseProcess):
         total_lhc_pct = sum(lhc.loading_percentage for lhc in regulatory["lhc_loadings"])
         avg_lhc_pct = total_lhc_pct / len(members) if members else 0
 
-        # Calculate age discount (primary member)
-        age_discount_pct = 0.0
-        if regulatory["age_discounts"]:
-            age_discount_pct = float(regulatory["age_discounts"][0].discount_percentage)
-
         # Get rebate percentage (primary member)
         rebate_pct = 0.0
         if regulatory["rebate_entitlements"]:
@@ -432,7 +427,6 @@ class AcquisitionProcess(BaseProcess):
                     "status": "Active",
                     "mandate": mandate,
                     "lhc_loading": avg_lhc_pct,
-                    "age_discount": age_discount_pct,
                     "rebate_pct": rebate_pct,
                 },
             )

@@ -11,9 +11,11 @@ from uuid import UUID
 
 import structlog
 
+from brickwell_health.config.regulatory import AgeBasedDiscountCalculator
 from brickwell_health.core.processes.base import BaseProcess
 from brickwell_health.domain.enums import InvoiceStatus, PaymentMethod, PaymentStatus
 from brickwell_health.generators.billing_generator import BillingGenerator
+from brickwell_health.utils.time_conversion import get_age
 
 
 logger = structlog.get_logger()
@@ -90,6 +92,61 @@ class BillingProcess(BaseProcess):
         final_failure_rate = 1 - final_success_rate
         per_attempt_failure = final_failure_rate ** (1 / total_attempts)
         self.payment_success_rate = 1 - per_attempt_failure
+
+        # Stateless calculator for PHI-Act youngest-adult age-based discount,
+        # recomputed per invoice from current member set.
+        self.age_discount_calculator = AgeBasedDiscountCalculator()
+
+    def _compute_policy_age_discount_pct(
+        self, policy_data: dict, invoice_date: date
+    ) -> Decimal:
+        """
+        Compute the age-based discount percentage applicable to a policy at
+        ``invoice_date`` per the PHI Act 2017 (Cth) youngest-adult rule.
+
+        Iterates over current policy members, evaluates each adult's
+        phase-out-adjusted entitlement via ``AgeBasedDiscountCalculator``,
+        and returns the entitlement of the *youngest* qualifying adult
+        (latest date_of_birth). Ties broken by ``member_id`` for determinism.
+        Returns ``Decimal("0")`` when no member qualifies.
+        """
+        members = policy_data.get("members", []) or []
+        policy = policy_data.get("policy")
+        if policy is None:
+            return Decimal("0")
+        join_date = policy.effective_date
+
+        best_dob: date | None = None
+        best_member_id: UUID | None = None
+        best_pct = Decimal("0")
+
+        for member in members:
+            dob = getattr(member, "date_of_birth", None)
+            if dob is None:
+                continue
+            age_at_invoice = get_age(dob, invoice_date)
+            if age_at_invoice < 18:
+                continue
+            age_at_join = get_age(dob, join_date)
+            result = self.age_discount_calculator.calculate_discount(
+                age_at_join, age_at_invoice
+            )
+            current_discount = result["current_discount"]
+            if current_discount <= 0:
+                continue
+
+            member_id = getattr(member, "member_id", None)
+            if best_dob is None or dob > best_dob or (
+                dob == best_dob
+                and best_member_id is not None
+                and member_id is not None
+                and member_id < best_member_id
+            ):
+                best_dob = dob
+                best_member_id = member_id
+                best_pct = Decimal(current_discount)
+
+        return best_pct
 
     def _emit_crm_event(
         self,
@@ -198,7 +255,9 @@ class BillingProcess(BaseProcess):
                 policy=policy,
                 period_start=current_date,
                 lhc_loading_pct=Decimal(str(policy_data.get("lhc_loading", 0))),
-                age_discount_pct=Decimal(str(policy_data.get("age_discount", 0))),
+                age_discount_pct=self._compute_policy_age_discount_pct(
+                    policy_data, current_date
+                ),
                 rebate_pct=Decimal(str(policy_data.get("rebate_pct", 0))),
             )
 

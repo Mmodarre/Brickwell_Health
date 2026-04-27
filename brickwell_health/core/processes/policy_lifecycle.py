@@ -964,6 +964,16 @@ class PolicyLifecycleProcess(BaseProcess):
                     self.shared_state.remove_policy_member(pm_id)
                     break
 
+        # Drop the deceased member from the policy's member roster so the
+        # billing-time youngest-adult age-discount search does not see ghost
+        # members. ``self.active_policies`` is the same dict reference as
+        # ``shared_state.active_policies``.
+        if "members" in policy:
+            policy["members"] = [
+                m for m in policy.get("members", [])
+                if getattr(m, "member_id", None) != member_id
+            ]
+
     def _handle_address_change(self, event: dict, current_date) -> None:
         """
         Handle address change for a member.
