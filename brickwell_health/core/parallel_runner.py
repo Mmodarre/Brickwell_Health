@@ -21,7 +21,7 @@ from brickwell_health.core.checkpoint_v2 import (
 )
 from brickwell_health.core.worker import run_worker
 from brickwell_health.db.connection import create_engine_from_config
-from brickwell_health.db.initialize import populate_ifrs17_cohorts
+from brickwell_health.db.initialize import extend_gl_periods, populate_ifrs17_cohorts
 
 logger = structlog.get_logger()
 
@@ -86,15 +86,7 @@ class ParallelRunner:
             mode=mode,
         )
 
-        # Top up ifrs17.cohort to cover the configured end_date. The function
-        # is idempotent (ON CONFLICT DO NOTHING), so this is a no-op when the
-        # YAML hasn't moved since init-db, and prevents FK violations when
-        # end_date has been bumped past the cohorts created at init time.
-        cohort_engine = create_engine_from_config(self.config.database)
-        try:
-            populate_ifrs17_cohorts(cohort_engine, self.config)
-        finally:
-            cohort_engine.dispose()
+        self._ensure_run_dependencies()
 
         start_time = time.time()
 
@@ -170,13 +162,7 @@ class ParallelRunner:
             mode=mode,
         )
 
-        # Top up ifrs17.cohort to cover the configured end_date (same rationale
-        # as ParallelRunner.run — see that method for details).
-        cohort_engine = create_engine_from_config(self.config.database)
-        try:
-            populate_ifrs17_cohorts(cohort_engine, self.config)
-        finally:
-            cohort_engine.dispose()
+        self._ensure_run_dependencies()
 
         start_time = time.time()
 
@@ -220,6 +206,30 @@ class ParallelRunner:
         )
 
         return aggregated
+
+    def _ensure_run_dependencies(self) -> None:
+        """
+        Top up date-window-dependent reference rows so the run can extend up
+        to the configured end_date even when the YAML has moved since the
+        last init-db.
+
+        Both helpers are idempotent (``ON CONFLICT DO NOTHING``):
+            - ``extend_gl_periods``       fills in monthly ``reference.gl_period``
+                                          rows up to end_date + 400 days.
+            - ``populate_ifrs17_cohorts`` fills in ``ifrs17.cohort`` rows for
+                                          every (portfolio x AFY) cell that
+                                          overlaps the simulation window.
+
+        Without this, bumping ``simulation.end_date`` past the cohort/period
+        coverage created at init-db time produces a foreign-key violation
+        once the sim crosses the gap.
+        """
+        engine = create_engine_from_config(self.config.database)
+        try:
+            extend_gl_periods(engine, self.config)
+            populate_ifrs17_cohorts(engine, self.config)
+        finally:
+            engine.dispose()
 
     def _verify_checkpoints_exist(self) -> None:
         """

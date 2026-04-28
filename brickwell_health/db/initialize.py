@@ -93,7 +93,7 @@ def init_database(
     # Extend reference.gl_period to cover the whole simulation window. The
     # JSON seed only has 24 months; monthly IFRS 17 journal lines need an FK
     # target for every reporting month, so we top up missing months here.
-    _extend_gl_periods(engine, config)
+    extend_gl_periods(engine, config)
 
     # Pre-populate IFRS 17 cohort dimension (portfolio x AFY) so that
     # policy.policy.ifrs17_cohort_id FK targets exist before any policy row
@@ -157,7 +157,7 @@ def _execute_reference_fk_constraints(engine) -> None:
 
 
 
-def _extend_gl_periods(engine, config) -> None:
+def extend_gl_periods(engine, config) -> None:
     """
     Top up ``reference.gl_period`` with monthly rows that cover the simulation
     window. The JSON seed is treated as the authoritative PeopleSoft snapshot;
