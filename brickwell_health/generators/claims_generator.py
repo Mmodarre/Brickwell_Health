@@ -112,6 +112,7 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         """
         super().__init__(rng, reference, sim_env)
         self.id_generator = id_generator
+        self.config = config if config is not None else ClaimsConfig()
         self.propensity = ClaimPropensityModel(rng, reference, config)
 
         # Load reference data from database
@@ -1377,6 +1378,13 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 # Determine if no-gap arrangement applies (common for contracted doctors)
                 no_gap = self.bernoulli(0.6)  # 60% of services are no-gap
                 if no_gap:
+                    # AccessGap-style cap: charge cannot exceed schedule_fee * cap
+                    cap_multiplier = Decimal(
+                        str(self.config.mbs_charge_cap.no_gap_charge_multiplier_cap)
+                    )
+                    max_charge = (schedule_fee * cap_multiplier).quantize(Decimal("0.01"))
+                    if charge_amount > max_charge:
+                        charge_amount = max_charge
                     gap_amount = Decimal("0")
                     # Adjust fund benefit to cover the difference
                     fund_benefit = charge_amount - medicare_benefit

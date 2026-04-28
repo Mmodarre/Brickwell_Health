@@ -174,6 +174,14 @@ class PolicyLifecycleProcess(BaseProcess):
         Returns:
             Event type string or None if no event
         """
+        # Defer all lifecycle events until the policy reaches its effective_date.
+        # Acquisitions register policies with a 14-day forward effective_date; an
+        # event picked in that window would set end_date < effective_date and
+        # break the tenure invariant.
+        policy_obj = policy.get("policy")
+        if policy_obj is not None and current_date < policy_obj.effective_date:
+            return None
+
         rand = self.rng.random()
 
         # Calculate base churn probability using the model
@@ -678,6 +686,18 @@ class PolicyLifecycleProcess(BaseProcess):
         """
         self.batch_writer.add_raw_sql("policy_member_termination", sql)
 
+        # Terminate the direct-debit mandate (if any)
+        mandate = policy.get("mandate")
+        if mandate is not None:
+            self.batch_writer.add_raw_sql(
+                "mandate_cancellation",
+                self.billing_gen.cancel_mandate_sql(
+                    direct_debit_id=mandate.direct_debit_id,
+                    cancellation_date=current_date,
+                    reason="Policy cancelled",
+                ),
+            )
+
         self.increment_stat("cancellations")
 
         # Track cancellation by reason
@@ -834,6 +854,15 @@ class PolicyLifecycleProcess(BaseProcess):
         if not policy:
             return
 
+        # Drop pre-effective death events. Cancelling a policy whose
+        # effective_date is still in the future would produce
+        # end_date < effective_date. Pre-effective primary deaths are <0.1%
+        # of cases; tracked as a known limitation rather than re-queued.
+        policy_obj = policy.get("policy")
+        if policy_obj is not None and current_date < policy_obj.effective_date:
+            self.increment_stat("member_deaths_dropped_pre_effective")
+            return
+
         if member_role == "Primary":
             # Primary death: Cancel the policy
             self._cancel_for_death(policy_id, policy, current_date)
@@ -881,6 +910,18 @@ class PolicyLifecycleProcess(BaseProcess):
               AND is_active = TRUE
         """
         self.batch_writer.add_raw_sql("policy_member_termination_death", sql)
+
+        # Terminate the direct-debit mandate (if any)
+        mandate = policy.get("mandate")
+        if mandate is not None:
+            self.batch_writer.add_raw_sql(
+                "mandate_cancellation_death",
+                self.billing_gen.cancel_mandate_sql(
+                    direct_debit_id=mandate.direct_debit_id,
+                    cancellation_date=current_date,
+                    reason="Policy cancelled - primary member deceased",
+                ),
+            )
 
         # Remove members from shared state tracking
         if self.shared_state:

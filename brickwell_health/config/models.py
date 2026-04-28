@@ -260,6 +260,28 @@ class ClaimApprovalConfig(BaseModel):
         return v
 
 
+class MBSChargeCapConfig(BaseModel):
+    """
+    AccessGap-style cap on no-gap MBS billing.
+
+    Industry no-gap schemes (e.g. Medibank AccessGap, Bupa Medical Gap) cap the
+    surgeon's billable charge at a multiple of the MBS schedule fee so the fund
+    benefit cannot drift to underwriting-loss territory. Without the cap, a
+    1.9x schedule-fee charge with 75% Medicare reimbursement leaves the fund
+    paying ~1.15x schedule fee per service, which inflates the loss ratio.
+    """
+
+    no_gap_charge_multiplier_cap: float = Field(
+        default=1.30,
+        ge=1.0,
+        le=2.0,
+        description=(
+            "Maximum charge multiple of the MBS schedule fee for no-gap services. "
+            "Charges above this cap are clipped before the fund benefit is computed."
+        ),
+    )
+
+
 class AutoAdjudicationConfig(BaseModel):
     """
     Auto-adjudication configuration by claim type.
@@ -619,6 +641,12 @@ class ClaimsConfig(BaseModel):
         description="Claim approval/denial parameters",
     )
 
+    # AccessGap-style cap on no-gap fund benefit
+    mbs_charge_cap: MBSChargeCapConfig = Field(
+        default_factory=MBSChargeCapConfig,
+        description="Cap on no-gap MBS charges to prevent loss-ratio overshoot",
+    )
+
     # Processing delays for lifecycle transitions
     processing_delays: ClaimProcessingDelaysConfig = Field(
         default_factory=ClaimProcessingDelaysConfig,
@@ -775,6 +803,15 @@ class MemberLifecycleConfig(BaseModel):
         ge=0,
         le=0.1,
         description="Annual rate of preferred name updates",
+    )
+    mandate_change_rate: float = Field(
+        default=0.03,
+        ge=0,
+        le=0.2,
+        description=(
+            "Annual rate of direct-debit mandate replacement (e.g. members "
+            "switching banks). Industry baseline is ~3%/yr."
+        ),
     )
 
     # Medicare renewal

@@ -458,3 +458,74 @@ class BillingGenerator(BaseGenerator[InvoiceCreate]):
         else:
             invoice.invoice_status = InvoiceStatus.PARTIALLY_PAID
         return invoice
+
+
+    def cancel_mandate_sql(
+        self,
+        direct_debit_id: UUID,
+        cancellation_date: date,
+        reason: str,
+    ) -> str:
+        """
+        Build the UPDATE statement that terminates a direct-debit mandate.
+
+        The SQL is intended to be queued via ``BatchWriter.add_raw_sql`` and
+        executed after COPY operations complete.
+
+        Args:
+            direct_debit_id: Mandate to cancel
+            cancellation_date: Effective cancellation date
+            reason: Free-text cancellation reason (single-quoted in SQL)
+
+        Returns:
+            SQL string with no trailing semicolon
+        """
+        safe_reason = reason.replace("'", "''")
+        return (
+            "UPDATE billing.direct_debit_mandate "
+            f"SET status = 'Cancelled', "
+            f"cancellation_date = '{cancellation_date.isoformat()}', "
+            f"cancellation_reason = '{safe_reason}', "
+            f"modified_at = '{self.get_current_datetime().isoformat()}', "
+            "modified_by = 'SIMULATION' "
+            f"WHERE direct_debit_id = '{direct_debit_id}'"
+        )
+
+    def replace_mandate(
+        self,
+        policy: PolicyCreate,
+        member: MemberCreate,
+        replacement_date: date,
+        old_mandate: DirectDebitMandateCreate,
+        reason: str = "Mandate replaced (bank change)",
+    ) -> tuple[BankAccountCreate, DirectDebitMandateCreate, str]:
+        """
+        Generate a replacement bank account + mandate and the cancel SQL for the old mandate.
+
+        Used by in-life mandate churn (~3%/yr, e.g. members switching banks).
+        The caller is responsible for batch-writing the new bank_account and
+        mandate records, queuing the returned cancel SQL, and updating any
+        cached references.
+
+        Args:
+            policy: Policy the mandate is attached to
+            member: Account owner
+            replacement_date: Date of replacement (used as authorization_date and cancellation_date)
+            old_mandate: Existing mandate to be terminated
+            reason: Cancellation reason for the old mandate
+
+        Returns:
+            Tuple of (new_bank_account, new_mandate, cancel_sql_for_old_mandate)
+        """
+        new_bank_account = self.generate_bank_account(member=member, policy=policy)
+        new_mandate = self.generate_direct_debit_mandate(
+            policy=policy,
+            bank_account=new_bank_account,
+            authorization_date=replacement_date,
+        )
+        cancel_sql = self.cancel_mandate_sql(
+            direct_debit_id=old_mandate.direct_debit_id,
+            cancellation_date=replacement_date,
+            reason=reason,
+        )
+        return new_bank_account, new_mandate, cancel_sql

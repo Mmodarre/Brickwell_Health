@@ -710,6 +710,18 @@ class BillingProcess(BaseProcess):
         """
         self.batch_writer.add_raw_sql("policy_member_lapse", sql)
 
+        # Terminate the direct-debit mandate (if any)
+        mandate = policy_data.get("mandate")
+        if mandate is not None:
+            self.batch_writer.add_raw_sql(
+                "mandate_cancellation_lapse",
+                self.billing_gen.cancel_mandate_sql(
+                    direct_debit_id=mandate.direct_debit_id,
+                    cancellation_date=current_date,
+                    reason=f"Policy lapsed for arrears ({days_overdue} days overdue)",
+                ),
+            )
+
         self.increment_stat("policies_lapsed")
 
         logger.info(

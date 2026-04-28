@@ -19,6 +19,7 @@ import structlog
 from brickwell_health.core.processes.base import BaseProcess
 from brickwell_health.domain.enums import MaritalStatus, MemberChangeType, MemberRole
 from brickwell_health.domain.member import MemberUpdate
+from brickwell_health.generators.billing_generator import BillingGenerator
 from brickwell_health.generators.member_generator import MemberGenerator
 
 if TYPE_CHECKING:
@@ -80,6 +81,14 @@ class MemberLifecycleProcess(BaseProcess):
             sim_env=self.sim_env,
         )
 
+        # Billing generator for mandate replacement (in-life mandate churn)
+        self.billing_gen = BillingGenerator(
+            self.rng,
+            self.reference,
+            self.id_generator,
+            sim_env=self.sim_env,
+        )
+
         # Load configuration
         self.lifecycle_config = self.config.member_lifecycle
 
@@ -109,6 +118,7 @@ class MemberLifecycleProcess(BaseProcess):
             self._process_name_changes(current_date)
             self._process_marital_status_changes(current_date)
             self._process_preferred_name_updates(current_date)
+            self._process_mandate_changes(current_date)
             self._process_medicare_renewals(current_date)
             self._process_deaths(current_date)
 
@@ -468,6 +478,74 @@ class MemberLifecycleProcess(BaseProcess):
             )
 
             self.increment_stat("preferred_name_updates")
+
+
+    def _process_mandate_changes(self, current_date: date) -> None:
+        """
+        Process potential direct-debit mandate replacements for active policies.
+
+        Mandates are policy-scoped (one per policy), so this iterates active
+        policies rather than members. With daily probability mandate_change_rate/365,
+        a new bank account + mandate are issued and the old mandate is cancelled.
+
+        Real-world drivers: bank switches, mortgage refinances, account closures.
+        """
+        if not self.shared_state:
+            return
+
+        annual_rate = self._get_config_rate("mandate_change_rate", 0.03)
+        daily_rate = self.annual_rate_to_daily(annual_rate)
+        if daily_rate <= 0.0:
+            return
+
+        for policy_id, policy_data in list(self.shared_state.active_policies.items()):
+            if policy_data.get("status") != "Active":
+                continue
+
+            old_mandate = policy_data.get("mandate")
+            if old_mandate is None:
+                continue
+
+            policy_obj = policy_data.get("policy")
+            if policy_obj is None or current_date < policy_obj.effective_date:
+                continue
+
+            if self.rng.random() >= daily_rate:
+                continue
+
+            members = policy_data.get("members", [])
+            primary_member = members[0] if members else None
+            if primary_member is None:
+                continue
+
+            new_bank_account, new_mandate, cancel_sql = self.billing_gen.replace_mandate(
+                policy=policy_obj,
+                member=primary_member,
+                replacement_date=current_date,
+                old_mandate=old_mandate,
+                reason="Mandate replaced (bank change)",
+            )
+
+            self.batch_writer.add(
+                "regulatory.bank_account",
+                new_bank_account.model_dump(),
+            )
+            self.batch_writer.add(
+                "billing.direct_debit_mandate",
+                new_mandate.model_dump(),
+            )
+            self.batch_writer.add_raw_sql("mandate_cancellation_replacement", cancel_sql)
+
+            # Update cached mandate so downstream lookups resolve to the active one
+            policy_data["mandate"] = new_mandate
+
+            self.increment_stat("mandate_changes")
+            logger.debug(
+                "mandate_replaced",
+                policy_id=str(policy_id),
+                old_mandate_id=str(old_mandate.direct_debit_id),
+                new_mandate_id=str(new_mandate.direct_debit_id),
+            )
 
     def _process_medicare_renewals(self, current_date: date) -> None:
         """Process Medicare card renewals (deterministic based on expiry)."""
