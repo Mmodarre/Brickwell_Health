@@ -21,6 +21,7 @@ from brickwell_health.core.checkpoint_v2 import (
 )
 from brickwell_health.core.worker import run_worker
 from brickwell_health.db.connection import create_engine_from_config
+from brickwell_health.db.initialize import populate_ifrs17_cohorts
 
 logger = structlog.get_logger()
 
@@ -84,6 +85,16 @@ class ParallelRunner:
             end_date=self.config.simulation.end_date.isoformat(),
             mode=mode,
         )
+
+        # Top up ifrs17.cohort to cover the configured end_date. The function
+        # is idempotent (ON CONFLICT DO NOTHING), so this is a no-op when the
+        # YAML hasn't moved since init-db, and prevents FK violations when
+        # end_date has been bumped past the cohorts created at init time.
+        cohort_engine = create_engine_from_config(self.config.database)
+        try:
+            populate_ifrs17_cohorts(cohort_engine, self.config)
+        finally:
+            cohort_engine.dispose()
 
         start_time = time.time()
 
@@ -158,6 +169,14 @@ class ParallelRunner:
             num_workers=self.num_workers,
             mode=mode,
         )
+
+        # Top up ifrs17.cohort to cover the configured end_date (same rationale
+        # as ParallelRunner.run — see that method for details).
+        cohort_engine = create_engine_from_config(self.config.database)
+        try:
+            populate_ifrs17_cohorts(cohort_engine, self.config)
+        finally:
+            cohort_engine.dispose()
 
         start_time = time.time()
 

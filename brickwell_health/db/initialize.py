@@ -98,7 +98,7 @@ def init_database(
     # Pre-populate IFRS 17 cohort dimension (portfolio x AFY) so that
     # policy.policy.ifrs17_cohort_id FK targets exist before any policy row
     # is inserted by the simulation.
-    _populate_ifrs17_cohorts(engine, config)
+    populate_ifrs17_cohorts(engine, config)
 
     if enable_cdc:
         _setup_cdc_slot(engine)
@@ -254,7 +254,7 @@ def _extend_gl_periods(engine, config) -> None:
     )
 
 
-def _populate_ifrs17_cohorts(engine, config) -> None:
+def populate_ifrs17_cohorts(engine, config) -> None:
     """
     Pre-populate ``ifrs17.cohort`` with the full (portfolio x AFY) grid that
     overlaps the simulation window.
