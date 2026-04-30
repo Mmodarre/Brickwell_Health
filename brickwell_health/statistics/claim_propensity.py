@@ -324,10 +324,15 @@ class ClaimPropensityModel:
         optical_weight = self.config.optical.frequency
         physio_weight = self.config.physiotherapy.frequency
         chiro_weight = self.config.chiropractic.frequency
-        other_weight = 0.5  # Other services
 
-        services = ["Dental", "Optical", "Physiotherapy", "Chiropractic", "Other"]
-        weights = [dental_weight, optical_weight, physio_weight, chiro_weight, other_weight]
+        services = [
+            "Dental", "Optical", "Physiotherapy", "Chiropractic",
+            "Podiatry", "Psychology", "Massage", "Acupuncture", "Osteopathy",
+        ]
+        weights = [
+            dental_weight, optical_weight, physio_weight, chiro_weight,
+            0.12, 0.10, 0.12, 0.08, 0.08,
+        ]
         total = sum(weights)
         probs = [w / total for w in weights]
 
@@ -428,6 +433,9 @@ class ClaimPropensityModel:
             "Chiropractic": 0.70,
             "Podiatry": 0.70,
             "Psychology": 0.60,
+            "Massage": 0.65,
+            "Acupuncture": 0.65,
+            "Osteopathy": 0.70,
             "Hospital": 1.00,  # Full benefit for contracted
             "Ambulance": 1.00,
         }

@@ -110,43 +110,40 @@ class ClaimsProcess(BaseProcess):
         """
         Build benefit category ID mapping from database reference table.
 
-        Maps service type names (e.g., "Dental", "Optical") to benefit_category_id values.
-
-        Returns:
-            Dict mapping service type name to benefit_category_id
+        Maps service type names (e.g., "Dental", "Optical") to leaf benefit_category_id values.
+        Parent/non-leaf categories are excluded.
         """
         benefit_categories = self.reference.get_benefit_categories()
 
-        # Build mapping from category_name to benefit_category_id
-        # Also map from common service type names to their corresponding categories
-        category_map = {}
+        parent_ids = {
+            cat.get("parent_category_id")
+            for cat in benefit_categories
+            if cat.get("parent_category_id") is not None
+        }
 
+        code_to_service = {
+            "DENTAL_GENERAL": "Dental",
+            "OPTICAL": "Optical",
+            "PHYSIO": "Physiotherapy",
+            "CHIRO": "Chiropractic",
+            "PODIATRY": "Podiatry",
+            "PSYCHOLOGY": "Psychology",
+            "MASSAGE": "Massage",
+            "ACUPUNCTURE": "Acupuncture",
+            "NATURAL_THERAPIES": "Natural Therapies",
+            "OSTEO": "Osteopathy",
+            "SPEECH": "Speech Pathology",
+            "DIETETICS": "Dietetics",
+            "OT": "Occupational Therapy",
+        }
+
+        category_map: dict[str, int] = {}
         for cat in benefit_categories:
             cat_id = cat.get("benefit_category_id")
-            cat_name = cat.get("category_name", "")
             cat_code = cat.get("category_code", "")
 
-            # Map by category_name (e.g., "Dental" -> 3)
-            if cat_name:
-                category_map[cat_name] = cat_id
-
-            # Map by common service type variations
-            # Match category_code to service type names
-            code_to_service = {
-                "DENTAL": "Dental",
-                "OPTICAL": "Optical",
-                "PHYSIO": "Physiotherapy",
-                "CHIRO": "Chiropractic",
-                "PODIATRY": "Podiatry",
-                "PSYCHOLOGY": "Psychology",
-                "MASSAGE": "Massage",
-                "ACUPUNCTURE": "Acupuncture",
-                "NATURAL_THERAPIES": "Natural Therapies",
-                "OSTEOPATHY": "Osteopathy",
-                "SPEECH_PATHOLOGY": "Speech Pathology",
-                "DIETETICS": "Dietetics",
-                "OCC_THERAPY": "Occupational Therapy",
-            }
+            if cat_id in parent_ids:
+                continue
 
             if cat_code in code_to_service:
                 service_name = code_to_service[cat_code]
@@ -220,7 +217,10 @@ class ClaimsProcess(BaseProcess):
         Returns:
             Benefit category ID
         """
-        return self._benefit_category_map.get(service_type, 1)  # Default to EXTRAS parent category
+        cat_id = self._benefit_category_map.get(service_type)
+        if cat_id is None:
+            raise ValueError(f"No leaf benefit category for service type: {service_type!r}")
+        return cat_id
 
     def run(self) -> Generator:
         """
@@ -1764,7 +1764,9 @@ class ClaimsProcess(BaseProcess):
             return None
 
         product_id = policy.product_id
-        cat_id = benefit_category_id or 1
+        if not benefit_category_id:
+            return None
+        cat_id = benefit_category_id
 
         # Look up annual limit from reference data
         limit_key = (product_id, cat_id)
@@ -1795,10 +1797,13 @@ class ClaimsProcess(BaseProcess):
         usage_date: date,
     ) -> None:
         """Record benefit usage for limit tracking."""
+        if not benefit_category_id:
+            logger.warning("skipping_benefit_usage_no_category", claim_id=str(claim.claim_id))
+            return
         # Get product_id from the policy to look up limits
         policy = member_data.get("policy")
         product_id = policy.product_id if policy else None
-        cat_id = benefit_category_id or 1
+        cat_id = benefit_category_id
         # Use Australian financial year (July-June) for benefit limits
         benefit_year = get_financial_year(usage_date)
 

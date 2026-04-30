@@ -416,8 +416,6 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
         member_state = getattr(member, "state", None)
         selected_provider = self._select_provider(state=member_state)
         provider_id = selected_provider.get("provider_id")
-        benefit_category_id = self._get_benefit_category_id(service_type)
-
         claim_lines: list[ClaimLineCreate] = []
         extras_claims: list[ExtrasClaimCreate] = []
         total_charge = Decimal("0")
@@ -433,6 +431,12 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 "major": DentalServiceType.MAJOR,
             }
             header_dental_service_type = arch_enum_map.get(archetype)
+
+        # Resolve benefit_category_id — dental uses leaf based on archetype
+        if service_type == "Dental":
+            benefit_category_id = 5 if archetype == "major" else 4
+        else:
+            benefit_category_id = self._get_benefit_category_id(service_type)
 
         for line_idx, spec in enumerate(item_specs, start=1):
             sub_type = spec.get("sub_type")
@@ -1002,7 +1006,10 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
             )
             extras_item_id = selected_extras_item.get("extras_item_id", 1)
             item_description = f"{service_type} service (rejected)"
-            benefit_category_id = self._get_benefit_category_id(service_type)
+            if service_type == "Dental":
+                benefit_category_id = 4  # General Dental leaf
+            else:
+                benefit_category_id = self._get_benefit_category_id(service_type)
             # Select real provider from reference data
             selected_provider = self._select_provider()
             provider_id = selected_provider.get("provider_id")
@@ -1176,25 +1183,31 @@ class ClaimsGenerator(BaseGenerator[ClaimCreate]):
                 "Psychology": "PS",
                 "Massage": "M",
                 "Acupuncture": "A",
+                "Osteopathy": "OS",
             }
             prefix = codes.get(service_type, "X")
 
         return f"{prefix}{self.uniform_int(100, 999)}"
 
     def _get_benefit_category_id(self, service_type: str) -> int:
-        """Get benefit category ID for service type."""
-        # Mapping aligned with reference/benefit_category.json
+        """Get leaf benefit category ID for service type.
+
+        Dental must be resolved at the call site — passing "Dental" here is an error.
+        """
         category_map = {
-            "Dental": 3,        # DENTAL
-            "Optical": 7,       # OPTICAL
-            "Physiotherapy": 8, # PHYSIO
-            "Chiropractic": 9,  # CHIRO
-            "Podiatry": 10,     # PODIATRY
-            "Psychology": 11,   # PSYCHOLOGY
-            "Massage": 13,      # MASSAGE (Remedial Massage)
-            "Acupuncture": 14,  # ACUPUNCTURE
+            "Optical": 7,
+            "Physiotherapy": 8,
+            "Chiropractic": 9,
+            "Podiatry": 10,
+            "Psychology": 11,
+            "Osteopathy": 12,
+            "Massage": 13,
+            "Acupuncture": 14,
         }
-        return category_map.get(service_type, 1)  # Default to EXTRAS parent category
+        cat_id = category_map.get(service_type)
+        if cat_id is None:
+            raise ValueError(f"Unknown extras service type for benefit category: {service_type!r}")
+        return cat_id
 
     def _generate_tooth_number(self) -> str:
         """Generate a valid tooth number."""

@@ -6398,5 +6398,53 @@
     "is_active": true,
     "created_date": "2025-01-01T00:00:00",
     "created_by": "SYSTEM"
+  },
+  {
+    "product_benefit_id": 401,
+    "product_id": 43,
+    "benefit_category_id": 4,
+    "coverage_level": "Full",
+    "description": "General dental coverage",
+    "benefit_percentage": 70.0,
+    "waiting_period_months": 2,
+    "sub_limit_applies": true,
+    "requires_pre_approval": false,
+    "effective_date": "2023-04-01",
+    "end_date": null,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_benefit_id": 402,
+    "product_id": 43,
+    "benefit_category_id": 5,
+    "coverage_level": "Full",
+    "description": "Major dental coverage",
+    "benefit_percentage": 70.0,
+    "waiting_period_months": 12,
+    "sub_limit_applies": true,
+    "requires_pre_approval": false,
+    "effective_date": "2023-04-01",
+    "end_date": null,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
+  },
+  {
+    "product_benefit_id": 403,
+    "product_id": 43,
+    "benefit_category_id": 6,
+    "coverage_level": "Full",
+    "description": "Orthodontic coverage",
+    "benefit_percentage": 70.0,
+    "waiting_period_months": 12,
+    "sub_limit_applies": true,
+    "requires_pre_approval": false,
+    "effective_date": "2023-04-01",
+    "end_date": null,
+    "is_active": true,
+    "created_date": "2025-01-01T00:00:00",
+    "created_by": "SYSTEM"
   }
 ]

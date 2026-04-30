@@ -155,7 +155,7 @@ class TestPendingClaimsSerializer:
                 "approved": True,
                 "denial_reason": None,
                 "claim_line_ids": [claim_line_id],
-                "benefit_category_id": 3,
+                "benefit_category_id": 4,
                 "benefit_amount": Decimal("150.00"),
                 "policy_id": policy_id,
                 "is_auto_adjudicated": True,

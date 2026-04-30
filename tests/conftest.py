@@ -237,9 +237,20 @@ def _create_test_benefit_categories(ref_dir: Path) -> None:
     import json
 
     categories = [
-        {"benefit_category_id": 1, "category_code": "DENTAL", "category_name": "Dental", "category_type": "Extras"},
-        {"benefit_category_id": 2, "category_code": "OPTICAL", "category_name": "Optical", "category_type": "Extras"},
-        {"benefit_category_id": 3, "category_code": "PHYSIO", "category_name": "Physiotherapy", "category_type": "Extras"},
+        {"benefit_category_id": 1, "category_code": "EXTRAS", "category_name": "Extras Cover", "category_type": "Extras", "parent_category_id": None},
+        {"benefit_category_id": 2, "category_code": "HOSPITAL", "category_name": "Hospital Cover", "category_type": "Hospital", "parent_category_id": None},
+        {"benefit_category_id": 3, "category_code": "DENTAL", "category_name": "Dental", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 4, "category_code": "DENTAL_GENERAL", "category_name": "General Dental", "category_type": "Extras", "parent_category_id": 3},
+        {"benefit_category_id": 5, "category_code": "DENTAL_MAJOR", "category_name": "Major Dental", "category_type": "Extras", "parent_category_id": 3},
+        {"benefit_category_id": 6, "category_code": "DENTAL_ORTHO", "category_name": "Orthodontics", "category_type": "Extras", "parent_category_id": 3},
+        {"benefit_category_id": 7, "category_code": "OPTICAL", "category_name": "Optical", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 8, "category_code": "PHYSIO", "category_name": "Physiotherapy", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 9, "category_code": "CHIRO", "category_name": "Chiropractic", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 10, "category_code": "PODIATRY", "category_name": "Podiatry", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 11, "category_code": "PSYCHOLOGY", "category_name": "Psychology", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 12, "category_code": "OSTEO", "category_name": "Osteopathy", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 13, "category_code": "MASSAGE", "category_name": "Remedial Massage", "category_type": "Extras", "parent_category_id": 1},
+        {"benefit_category_id": 14, "category_code": "ACUPUNCTURE", "category_name": "Acupuncture", "category_type": "Extras", "parent_category_id": 1},
     ]
 
     with open(ref_dir / "benefit_category.json", "w") as f:
